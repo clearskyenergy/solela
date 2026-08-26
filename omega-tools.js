@@ -44,11 +44,8 @@
 
   /* ── Categories drive the section grouping in the marketplace grid ── */
   var CATEGORIES = [
-    { key: 'design',      label: 'Design & Engineering' },
-    { key: 'finance',     label: 'Finance & Modeling' },
-    { key: 'sales',       label: 'Sales & Proposals' },
-    { key: 'permitting',  label: 'Permitting & AHJ' },
-    { key: 'marketplace', label: 'Marketplace & Partners' }
+    { key: 'origination', label: 'Origination & Prospecting' },
+    { key: 'design',      label: 'Design & Engineering' }
   ];
 
   /* ══════════════════════════════════════════════════════════════════
@@ -71,89 +68,15 @@
        savesData  true => tool persists state via the toolData contract.
      ══════════════════════════════════════════════════════════════════ */
   var SEED_TOOLS = [
+    { key:'comed_capacity', name:'ComEd Capacity Map', category:'origination',
+      desc:'Hosting-capacity screening — identify and qualify C&I sites.',
+      file:'/comed-capacity.html', tier:TIER.ALL, savesData:true,
+      icon:'M12 2 4 6v6c0 5 3.4 9.4 8 10 4.6-.6 8-5 8-10V6zM12 8v4M12 16h.01' },
+
     { key:'editor', name:'BESS Site Map', category:'design',
       desc:'Wizard, conduit routing & equipment on live satellite.',
-      action:'new:bess', tier:TIER.STANDARD, custom:true, savesData:true,
-      icon:'M2 7h20v14H2zM16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16' },
-
-    { key:'sandbox', name:'Open a Sandbox', category:'design',
-      desc:'Full editor at any address — save when ready.',
-      action:'new:sandbox', tier:TIER.STANDARD, savesData:true,
-      icon:'M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20zM12 8v4M12 16h.01' },
-
-    { key:'proforma', name:'BESS Pro Forma', category:'finance',
-      desc:'IRR, NPV, value stack & incentives in 8 steps.',
-      file:'/proforma.html', tier:TIER.STANDARD, savesData:true,
-      icon:'M18 20V10M12 20V4M6 20v-6' },
-
-    { key:'dcfc', name:'DCFC BESS Pro Forma', category:'finance',
-      desc:'EV fast-charging + storage economics & demand offset.',
-      file:'/dcfc-proforma.html', badge:'new', tier:TIER.DELUXE, savesData:true,
-      icon:'M14 2v6h6M4 22V4a2 2 0 0 1 2-2h8l6 6v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2zM11 11l-2 4h3l-2 4' },
-
-    { key:'apartment', name:'Residential BESS Analyzer', category:'finance',
-      desc:'Multi-state apartment portfolio modeling & VPP stacking.',
-      file:'/apartment-bess.html', tier:TIER.DELUXE, savesData:true,
-      icon:'M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2zM9 22V12h6v10' },
-
-    { key:'fleet', name:'3D Fleet Financial Modeler', category:'finance',
-      desc:'3D fleet with 24-hr dispatch, hourly earnings & PDF reports.',
-      file:'/fleet-simulator-3d.html', tier:TIER.DELUXE, savesData:true,
-      icon:'M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16zM3.27 6.96L12 12.01l8.73-5.05M12 22.08V12' },
-
-    { key:'valuestack', name:'Value Stack Calculator', category:'finance',
-      desc:'Revenue streams by utility with customer/ClearSky split.',
-      file:'/valuestack.html', tier:TIER.STANDARD, savesData:true,
-      icon:'M18 20V10M12 20V4M6 20v-6M2 20h20' },
-
-    { key:'investment', name:'Site Investment Analysis', category:'finance',
-      desc:'Investor-grade returns, risk & portfolio underwriting.',
-      file:'/investment-analysis.html', badge:'invest', tier:TIER.ENTERPRISE, savesData:true,
-      icon:'M3 3v18h18M18 9l-5 5-3-3-4 4' },
-
-    { key:'sales', name:'Sales Proposal Builder', category:'sales',
-      desc:'3-page customer proposals with AI site placement.',
-      file:'/sales-proposal.html', tier:TIER.STANDARD, savesData:true,
-      icon:'M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8zM14 2v6h6M16 13H8M16 17H8' },
-
-    { key:'permit', name:'Permit Creator', category:'permitting',
-      desc:'AHJ-ready sets — cover, plot plan, SLD, details.',
-      file:'/permit.html', tier:TIER.DELUXE, savesData:true,
-      icon:'M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8zM14 2v6h6M16 13H8M16 17H8' },
-
-    { key:'ahj', name:'AHJ Approval Portal', category:'marketplace',
-      desc:'Submit & track permit approvals with the AHJ.',
-      file:'/ahj-portal.html', soon:true, tier:TIER.ALL,
-      icon:'M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10zM9 12l2 2 4-4' },
-
-    { key:'procurement', name:'Procurement Marketplace', category:'marketplace',
-      desc:'Market-wide equipment pricing & bankable products.',
-      file:'/procurement.html', soon:true, tier:TIER.ALL,
-      icon:'M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4zM3 6h18M16 10a4 4 0 0 1-8 0' },
-
-    { key:'financing', name:'Financing Partners', category:'marketplace',
-      desc:'Debt, tax equity & capital partners for projects.',
-      file:'https://financing.csebuilders.com/', tier:TIER.ALL,
-      icon:'M12 2 2 7l10 5 10-5zM2 17l10 5 10-5M2 12l10 5 10-5' },
-
-    { key:'aggregators', name:'Aggregators', category:'marketplace',
-      desc:'VPP / DR aggregator network & dispatch enrollment.',
-      file:'/aggregators.html', soon:true, tier:TIER.ALL,
-      icon:'M12 12a2 2 0 1 0 0-4 2 2 0 0 0 0 4zM12 2v4M12 18v4M2 12h4M18 12h4' },
-
-    { key:'offtakers', name:'AI Data Offtakers', category:'marketplace',
-      desc:'Compute / data-center offtake & behind-the-meter load.',
-      file:'/offtakers.html', soon:true, tier:TIER.ALL,
-      icon:'M3 3h8v8H3zM13 3h8v8h-8zM3 13h8v8H3zM13 13h8v8h-8z' },
-
-    /* ── CLIENT-SPECIFIC TOOLS ──
-       `orgs:[...]` restricts a tool to specific tenants (by orgId). Only those
-       orgs see it; it never appears for anyone else. Combine with a tenant's
-       requiredTools list to make it a mandatory, non-removable dashboard tool. */
-    { key:'spatco_ev', name:'EV / Project Estimate', category:'sales',
-      desc:'SPATCO-format EV charger & project install estimates with AI scope.',
-      file:'/spatco-ev-estimate.html', tier:TIER.ALL, orgs:['spatco.com'],
-      icon:'M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8zM14 2v6h6M9 13h6M9 17h6M9 9h1' }
+      action:'new:bess', tier:TIER.ALL, custom:true, savesData:true,
+      icon:'M2 7h20v14H2zM16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16' }
   ];
 
   /* ══════════════════════════════════════════════════════════════════

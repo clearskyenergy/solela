@@ -12,5 +12,5 @@ window.CLEARSKY_CONFIG = {
   // not here — leave null, same as the other portals.
   allowedDomain: null,
   companyName: "Solela LLC",
-  portalTitle: "Chileasing Energy · BESS Site Portal"
+  portalTitle: "Chileasing Energy · Site Origination Portal"
 };

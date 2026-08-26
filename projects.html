@@ -94,9 +94,9 @@ select.sort-sel{border:1.5px solid var(--cs-border);border-radius:9px;padding:9p
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
       Portal
     </a>
-    <a class="tb-tab" href="/marketplace.html" id="tab-marketplace">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 9l1-5h16l1 5"/><path d="M4 9v10a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1V9"/><path d="M9 22V12h6v10"/></svg>
-      Marketplace
+    <a class="tb-tab" href="/comed-capacity.html" id="tab-comed">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2 4 6v6c0 5 3.4 9.4 8 10 4.6-.6 8-5 8-10V6z"/><path d="M12 8v4M12 16h.01"/></svg>
+      ComEd Capacity
     </a>
     <a class="tb-tab active" href="/projects.html" id="tab-projects">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
@@ -161,7 +161,7 @@ function esc2(s){ return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g
 function signOut(){ auth.signOut().then(function(){ window.location.href='/'; }); }
 
 /* Paint the shared OMEGA topbar (client chip, tier badge, avatar, name) so this
-   page matches the portal index and marketplace exactly. */
+   page matches the portal index exactly. */
 function paintTopbar(user){
   var chip = document.getElementById('tb-client-chip');
   if (chip){ chip.innerHTML = WS.logo

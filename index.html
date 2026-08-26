@@ -681,6 +681,22 @@ var STAGES = [
   { key:'proposal',   label:'Proposal',   color:'#F59E0B' },
   { key:'won',        label:'Sold',       color:'#1DB954' }
 ];
+
+/* The ComEd Capacity tool has its OWN stage vocabulary and it is the thing
+   actually writing these rows, so it wins and this maps onto it rather than
+   the other way round:
+
+     tool 'target'  -> identified   (a site picked off the map, not yet worked)
+     tool 'dnc'     -> lost         (do-not-call is a dead outcome; it must
+                                     leave the open pipeline, but it is NOT a
+                                     loss anyone should be measured on — see
+                                     the note on the rep board below)
+
+   contacted / qualified / proposal / won / lost already match.
+   Anything unrecognised falls back to 'identified' rather than breaking the
+   row, which is why the Firestore rules deliberately do not enumerate
+   status values. */
+var STAGE_ALIAS = { target:'identified', dnc:'lost', '':'identified' };
 var STAGE_KEYS = STAGES.map(function(s){ return s.key; });
 var STAGE_LABEL = {};
 STAGES.forEach(function(s){ STAGE_LABEL[s.key] = s.label; });
@@ -789,7 +805,10 @@ function ago(d){
 
 /* ── Normalize one Firestore doc (or sample row) into the shape we render ── */
 function normalize(d, id){
-  var status = STAGE_KEYS.indexOf(d.status) >= 0 || d.status === 'lost' ? d.status : 'identified';
+  var raw = d.status || '';
+  if (STAGE_ALIAS.hasOwnProperty(raw)) raw = STAGE_ALIAS[raw];
+  var status = (STAGE_KEYS.indexOf(raw) >= 0 || raw === 'lost') ? raw : 'identified';
+  var isDnc = (d.status === 'dnc');
   var stageIdx = STAGE_KEYS.indexOf(status);
   var calls = num(d.callCount);
   var contactedAt = toDate(d.contactedAt);
@@ -811,6 +830,7 @@ function normalize(d, id){
     projectId: d.projectId || '',
     won: status === 'won',
     lost: status === 'lost',
+    dnc: isDnc,
     contractedKw: num(d.contractedKw),
     identifiedAt: toDate(d.identifiedAt),
     contactedAt: contactedAt,
@@ -869,7 +889,7 @@ function render(rows, isSample){
 }
 
 function computeKpis(rows){
-  var k = { identified:0, called:0, inEditor:0, won:0, lost:0, open:0,
+  var k = { identified:0, called:0, inEditor:0, won:0, lost:0, dnc:0, open:0,
             calls:0, capacityKw:0, contractedKw:0, reps:{} };
   rows.forEach(function(r){
     k.identified++;
@@ -879,6 +899,7 @@ function computeKpis(rows){
     if (r.inEditor) k.inEditor++;
     if (r.won){ k.won++; k.contractedKw += r.contractedKw || r.capacityKw; }
     if (r.lost) k.lost++;
+    if (r.dnc) k.dnc++;
     if (!r.won && !r.lost) k.open++;
     if (r.repEmail) k.reps[r.repEmail] = true;
   });
@@ -909,8 +930,12 @@ function renderKpis(k){
       foot:k.won + (k.won === 1 ? ' closed sale' : ' closed sales') },
     { cls:'',      label:'Calls logged', val:fmtN(k.calls), unit:'',
       foot:'Across ' + k.repCount + (k.repCount === 1 ? ' rep' : ' reps') },
+    /* dnc is reported separately from lost. Both leave the open pipeline,
+       but a do-not-call is the owner's decision and a loss is the rep's
+       outcome — folding them together would quietly penalise whoever works
+       the territory with the most opt-outs. */
     { cls:'amber', label:'Open pipeline', val:fmtN(k.open), unit:'sites',
-      foot:k.lost + ' closed lost' }
+      foot:(k.lost - k.dnc) + ' lost' + (k.dnc ? ' \u00b7 ' + k.dnc + ' do not call' : '') }
   ];
   document.getElementById('kpi-grid').innerHTML = tiles.map(function(t){
     return '<div class="kpi ' + t.cls + '">' +

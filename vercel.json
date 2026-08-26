@@ -8,5 +8,14 @@
       "source": "/comed-capacity.html",
       "destination": "https://tools.csebuilders.com/comed-capacity.html"
     }
+  ],
+  "headers": [
+    {
+      "source": "/(.*\\.pptx)",
+      "headers": [
+        { "key": "Content-Type", "value": "application/vnd.openxmlformats-officedocument.presentationml.presentation" },
+        { "key": "Access-Control-Allow-Origin", "value": "*" }
+      ]
+    }
   ]
 }

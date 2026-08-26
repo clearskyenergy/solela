@@ -94,13 +94,17 @@ select.sort-sel{border:1.5px solid var(--cs-border);border-radius:9px;padding:9p
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
       Portal
     </a>
-    <a class="tb-tab" href="/comed-capacity.html" id="tab-comed">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2 4 6v6c0 5 3.4 9.4 8 10 4.6-.6 8-5 8-10V6z"/><path d="M12 8v4M12 16h.01"/></svg>
-      ComEd Capacity
-    </a>
     <a class="tb-tab active" href="/projects.html" id="tab-projects">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
       Projects
+    </a>
+    <a class="tb-tab" href="/comed-capacity.html" id="tab-capacity">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 2 3 14h9l-1 8 10-12h-9z"/></svg>
+      ComEd Capacity
+    </a>
+    <a class="tb-tab" href="/editor.html" id="tab-editor">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 7h20v14H2z"/><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/></svg>
+      Site Map
     </a>
   </div>
   <div class="tb-spacer"></div>
@@ -151,11 +155,20 @@ let myEmail = '';
 // Brand fields (clientName/accountTier/logo) feed the shared OMEGA topbar; when
 // window.OMEGA_WORKSPACE is present it overrides these. Per-tenant: swap the
 // fallback values below to match the tenant (same as the index WORKSPACES entry).
+// NOTE: this page is loaded directly (not from the index), so
+// window.OMEGA_WORKSPACE is normally absent and the fallback below is what
+// runs. Keep `allowedDomains` in sync with WORKSPACES in index.html.
 const WS = window.OMEGA_WORKSPACE || {
-  orgId:'chileasing.com', allowedDomain:'chileasing.com',
+  orgId:'chileasing.com',
+  allowedDomains:['chileasing.com','csebuilders.com'],  // tenant + ClearSky support
   clientName:'Solela LLC', accountTier:'Enterprise'
 };
-function domainOf(email){ return (email||'').split('@')[1] || ''; }
+function domainOf(email){ return ((email||'').split('@')[1] || '').toLowerCase(); }
+function domainAllowed(email){
+  var list = WS.allowedDomains || (WS.allowedDomain ? [WS.allowedDomain] : null);
+  if (!list || !list.length) return true;
+  return list.indexOf(domainOf(email)) >= 0;
+}
 
 function esc2(s){ return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
 function signOut(){ auth.signOut().then(function(){ window.location.href='/'; }); }
@@ -202,11 +215,11 @@ auth.onAuthStateChanged(user => {
   myEmail = (user.email || '').toLowerCase();
   paintTopbar(user);
   // Only accounts on this workspace's domain may view its projects.
-  if (WS.allowedDomain && domainOf(user.email) !== WS.allowedDomain) {
+  if (!domainAllowed(user.email)) {
     document.getElementById('proj-table').innerHTML =
-      '<div class="empty"><p>This is the Solela workspace. Sign in with your @' +
-      WS.allowedDomain + ' account to view projects.</p></div>';
-    document.getElementById('proj-sub').textContent = 'Access restricted to @' + WS.allowedDomain;
+      '<div class="empty"><p>This is the Solela workspace. Sign in with your ' +
+      '@chileasing.com account to view projects.</p></div>';
+    document.getElementById('proj-sub').textContent = 'Access restricted to @chileasing.com';
     return;
   }
   loadProjects();

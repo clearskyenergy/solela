@@ -1,127 +1,170 @@
-# Solela LLC · Site Origination Portal
+# Solela LLC · ComEd Capacity Portal
 
-A deliberately narrow ClearSky-OMEGA tenant. Three destinations, one dashboard.
+Tenant deployment for **Chileasing Energy** (portal brand: Solela LLC) on the
+ClearSky-OMEGA platform.
 
-| Route | What it is |
-|---|---|
-| `/` | Origination funnel + sales rep dashboard |
-| `/comed-capacity.html` | ComEd hosting-capacity map — where sites get identified |
-| `/projects.html` | Sites taken forward |
-| `/editor.html?id=…` | BESS Site Map, opened from a project |
+This is a deliberately narrow deployment. It has three tools and nothing else:
 
-No marketplace, no finance tools, no partner roll-up, no team hub.
+| Tool | Route | Hosted |
+|---|---|---|
+| Projects | `/projects.html` | this repo |
+| BESS Site Map | `/editor.html` | `tools.csebuilders.com` (Vercel rewrite) |
+| ComEd Capacity map | `/comed-capacity.html` | `tools.csebuilders.com` (Vercel rewrite) |
+
+There is **no marketplace, no tool catalog, and no pro-forma suite** in this
+deployment. Navigation between the three tools happens in the topbar.
+
+---
+
+## Files
+
+```
+index.html                    Dashboard — ComEd pipeline KPIs + sales rep board
+projects.html                 Project list (unchanged apart from nav)
+config.js                     Firebase + Maps keys, tenant name
+vercel.json                   Rewrites for /editor.html and /comed-capacity.html
+firestore-comedsites.rules    Security rules for the comedSites collection
+clearsky-omega-mark-white.png Topbar mark
+```
+
+### Removed from the previous build
+
+`marketplace.html`, `investment-analysis.html`, `investment-analysis-logic.js`,
+`omega-tools.js`.
+
+`omega-tools.js` was the shared tool-catalog registry. With the marketplace and
+the tool grid gone, nothing in this repo reads it, and the index no longer loads
+it from `tools.csebuilders.com`. Removing it is what makes this deployment
+genuinely narrow rather than cosmetically narrow — there is now no code path
+that can surface a tool outside the three above.
+
+`investment-analysis` was dropped because it was not one of the three tools in
+scope. If it should stay, it needs to come back as a fourth nav tab plus its
+logic file; say so and it is a small change.
 
 ---
 
 ## The dashboard
 
-`index.html` is a projection of one collection: **`sites`**. Four numbers, in order:
+`index.html` renders KPIs only. No tool tiles, no team hub, no messaging.
 
-**Sites identified → Sites called → Sales made → Sites in editor**
+**Headline strip** — sites identified · sites called · sites in site map · sales made
 
-Each stage is a strict subset of the one before it. A site marked `won` counts as
-called even if nobody stamped `calledAt` — without that rule the funnel can show
-more sales than calls, which is the fastest way to make a rep stop trusting it.
+**Tiles** — deliverable capacity identified (MW) · contracted capacity (kW) ·
+calls logged · open pipeline
 
-Below the funnel: capacity identified (MW), open-not-yet-called, average days from
-called → sold, and a sortable per-rep table with call % and close %. Everything
-respects the time-window filter (all time / 90 / 30 / 7 days).
+**Stage conversion** — the same four steps as bars, each shown as a percentage of
+all identified sites
 
-**The rep columns always sum to the headline numbers.** Both the funnel and the rep
-table go through `countsInEditor()`, so a site whose project was deleted is excluded
-from both. If you add a stage, route it through one shared predicate the same way.
+**Sales reps** — one row per rep: identified, called, in site map, sales, call
+rate, win rate, contracted kW, last activity. Reps are derived from the site
+records themselves, so the table populates itself as sites get assigned. There
+is no separate rep roster to maintain.
+
+Below that: top sites by deliverable capacity, and a recent-activity feed.
+
+### One counting decision worth knowing
+
+A site that was called and later lost still counts as *called*. Losing a deal
+does not undo the call that was made. Every step counts each site at the
+furthest point it actually reached, and every figure is expressed as a share of
+all identified sites — so the strip, the tiles and the bars always reconcile.
+An earlier draft excluded lost sites from the funnel and produced 13 identified
+in one place and 14 in another.
+
+### Sample data
+
+When `comedSites` is empty the dashboard renders 14 illustrative Cook County
+sites across 4 reps, behind an amber "Sample" ribbon. It disappears on the first
+real save. This follows the platform convention used in the other tenant
+deployments. To remove it permanently, delete the `SAMPLE_SITES` block near the
+top of the dashboard script.
 
 ---
 
-## ⚠️ The one thing that must be wired up
+## Data contract — `comedSites`
 
-**Nothing in this repo writes to `sites` yet.** `comed-capacity.html` lives on the
-tool host (`tools.csebuilders.com`) and was not part of the source I was given, so
-I defined the schema rather than guessed at it.
-
-Until the capacity map saves a site, every number is a true zero and the dashboard
-says so in an amber note. It never shows sample data — a funnel with invented numbers
-in it is worse than an empty one, because a rep will act on it.
-
-### `sites/{siteId}`
+**This collection does not exist yet.** The dashboard reads it; the ComEd
+Capacity tool must write it. Until the tool writes real rows, the dashboard will
+show sample data indefinitely.
 
 | Field | Type | Notes |
 |---|---|---|
-| `orgId` | string | `chileasing.com` — tenant tag, enforced by rules |
-| `name` | string | site or business name |
+| `orgId` | string | **required** — `chileasing.com`. Enforced by security rules. |
+| `siteName` | string | **required** |
 | `address` | string | |
-| `pin` | string | Cook County PIN, optional |
-| `feeder` | string | ComEd feeder id, optional |
-| `capacityKw` | number | hosting capacity |
-| `source` | string | `comed-capacity` |
-| `status` | string | `identified` · `contacted` · `qualified` · `won` · `lost` |
-| `repEmail` | string | lowercase — the rep dashboard groups on this |
-| `repName` | string | falls back to `team_members` |
-| `calledAt` | timestamp | null until first contact |
-| `wonAt` | timestamp | null until sold |
-| `projectId` | string | `projects/{id}` once pushed into the editor |
-| `createdAt` | timestamp | when identified — drives the window filter |
+| `feeder` | string | ComEd feeder / circuit id |
+| `hostingCapacityKw` | number | deliverable capacity from the hosting-capacity layer |
+| `status` | string | `identified` \| `contacted` \| `qualified` \| `proposal` \| `won` \| `lost` |
+| `repEmail` | string | the rep who owns the site — drives the whole rep board |
+| `repName` | string | display name; falls back to the email local part |
+| `callCount` | number | calls logged against the site |
+| `contactedAt` | timestamp | first successful contact |
+| `projectId` | string | set when the site is pushed into the Site Map editor |
+| `contractedKw` | number | capacity on a signed deal (`status: 'won'`) |
+| `identifiedAt` | timestamp | |
+| `wonAt` | timestamp | |
+| `updatedAt` | timestamp | drives the activity feed and "last activity" |
 
-### If the capacity map already uses different field names
+Every field except `orgId` and `siteName` degrades to a sensible default rather
+than breaking a row, so the tool can adopt the schema incrementally.
 
-**Do not rewrite the dashboard.** Remap in `FIELD_MAP` near the top of the script in
-`index.html`. Each entry is a list of candidate field names tried in order:
+### How the four headline numbers are derived
 
-```js
-var FIELD_MAP = {
-  repEmail: ['repEmail','ownerEmail','assignedTo','uidEmail'],
-  wonAt:    ['wonAt','soldAt','closedAt'],
-  ...
-};
-```
+- **Identified** — every document
+- **Called** — `callCount > 0` **or** `contactedAt` set **or** status past
+  `identified`. Any one of the three is enough, so the count is right whether
+  the tool logs calls, stamps contact dates, or only moves the status.
+- **In site map** — `projectId` is set
+- **Sales made** — `status === 'won'`
 
-Add the real name to the front of the relevant list. That is the whole change.
+`projectId` should be the `projects` document id, which is what makes the site
+name in the top-sites table link through to `/editor.html?id=…`.
 
-### Deploy the rules
+### Rules
 
-`firestore-sites.rules` is a **fragment** — merge the `match /sites/{siteId}` block
-into your existing `firestore.rules` next to the `projects` block. It scopes reads to
-the caller's org and makes `orgId` immutable on update, so a rep can't move a site
-into another tenant.
+Merge `firestore-comedsites.rules` into the existing `clearsky-portal` ruleset
+alongside `projects` and `team_*`. It follows the same convention: a user's org
+is their email domain, `orgId` is immutable after creation, and
+`@csebuilders.com` is mapped onto the tenant for support access.
 
 ---
 
-## Tenant config
+## Access
 
-`config.js` holds Firebase + Maps keys and branding. Access control is the
-`WORKSPACES` map in `index.html`:
+Sign-in is gated to `@chileasing.com`, with `@csebuilders.com` allowed for
+ClearSky support. Both resolve to `orgId: chileasing.com`, so support sees the
+same data the client does.
 
-```js
-'chileasing.com': {
-  orgId: 'chileasing.com',
-  tierLevel: 1,
-  requiredTools: ['comed_capacity','editor'],
-  unlockedTools: ['comed_capacity','editor'],
-}
-```
-
-`tierLevel: 1` plus the explicit allowlist means anything added to
-`omega-tools.js` later stays locked until it is named here.
-
-`omega-tools.js` is otherwise a **shared platform file** — this copy has been cut
-down to two tools, so it has diverged from the upstream registry. See below.
+The allowlist lives in **two** places and they must be kept in sync:
+`WORKSPACES` in `index.html`, and the `WS` fallback in `projects.html`.
+`projects.html` is loaded directly rather than through the index, so
+`window.OMEGA_WORKSPACE` is normally absent and its own fallback is what runs.
 
 ---
 
 ## Open items
 
-1. **`comed-capacity.html` needs a write path.** It has to create `sites` docs on
-   save and stamp `calledAt` / `wonAt` / `projectId` as a rep moves a site along.
-   Without it the dashboard is correct and empty.
+1. **Confirm `tools.csebuilders.com/comed-capacity.html` exists.** The rewrite in
+   `vercel.json` assumes it, mirroring how `/editor.html` is routed. If the tool
+   lives elsewhere, change the destination there. If the URL is wrong the tab
+   404s.
+2. **Wire the ComEd Capacity tool to write `comedSites`.** If it already tracks
+   status, calls and rep assignment under different field names, remapping the
+   dashboard to those names is the better direction — it is a single normalize
+   function.
+3. **Deploy the Firestore rules** before the tool starts writing.
+4. **Domain-restrict the Google Maps key** in Google Cloud Console if it is not
+   already. It ships in client-side source, which is normal for browser use, but
+   an unrestricted key is billable by anyone who finds it.
 
-2. **`omega-tools.js` has forked from upstream.** The shared registry carries 15
-   tools; this copy carries 2. Better long-term fix: keep the shared file identical
-   and let `unlockedTools` do the filtering, so this tenant stops carrying a fork.
-   Right now it is a fork and should be flagged as one.
+## Testing status
 
-3. **`index.html` loads `/omega-tools.js` locally**, not from the tool host, because
-   of the fork above. Resolving item 2 lets it point back at
-   `https://tools.csebuilders.com/omega-tools.js`.
+Verified against a DOM harness: KPI arithmetic, strip/bar reconciliation, empty
+state, live-data path, Firestore `Timestamp` handling, domain resolution
+(including mixed case and unknown domains), malformed documents, and HTML
+escaping of injected markup in site and rep names.
 
-4. **Rep names come from `team_members`.** A rep who has never signed in shows as the
-   local-part of their email until they do.
+**Not verified: visual layout.** No browser was available in the build
+environment, so the responsive breakpoints at 1080px and 760px are unexercised.
+Worth a look on a phone before it goes to the client.

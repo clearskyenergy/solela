@@ -2,186 +2,311 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>ClearSky Portal</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Solela LLC · ComEd Capacity Pipeline</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
 :root{
-  --cs-navy:#0B1E35;--cs-dark:#0D2440;--cs-blue:#1B4F8A;--cs-sky:#2E86C1;
-  --cs-accent:#C9A84C;--cs-gold:#E8C56A;--cs-text:#1A2332;--cs-sub:#6B7A8D;
+  --cs-navy:#08384F;--cs-dark:#052A3D;--cs-blue:#006F9A;--cs-sky:#00A9A4;
+  --cs-accent:#00A9A4;--cs-gold:#00C4BC;--cs-text:#0F2733;--cs-sub:#5A7180;
   --cs-bg:#F4F1EC;--cs-surface:#FAFAF8;--cs-border:#DDD8D0;
-  --cs-green:#1DB954;--cs-red:#E53935;
-}
-body{font-family:'DM Sans',sans-serif;background:var(--cs-bg);color:var(--cs-text);min-height:100vh}
+  --cs-green:#1DB954;--cs-red:#E53935;--cs-amber:#B45309;
 
-/* ── AUTH SCREEN ── */
-#auth-screen{
-  display:flex;align-items:center;justify-content:center;min-height:100vh;
+  /* SAP Business Network chrome — unchanged from the platform baseline */
+  --sap-blue:#0070F2;
+  --sap-blue-hi:#1B90FF;
+  --sap-ink:#1D2D3E;
+  --sap-ink-2:#556B82;
+  --sap-bar:#FFFFFF;
+  --sap-bar-border:#E5E9ED;
+  --sap-page:#EDEFF1;
+  --sap-card:#FFFFFF;
+  --sap-card-border:#E4E8EC;
+  --sap-num:#223548;
+}
+body{--cs-bg:var(--sap-page);--cs-border:var(--sap-card-border)}
+body{font-family:'DM Sans',sans-serif;background:var(--cs-bg);color:var(--cs-text);min-height:100vh}
+a{color:inherit}
+:focus-visible{outline:2px solid var(--sap-blue);outline-offset:2px}
+
+/* ══════════ BOOT ══════════ */
+#omega-boot{position:fixed;inset:0;z-index:2147483000;background:#0B1E35;
+  display:flex;flex-direction:column;align-items:center;justify-content:center;gap:20px;
+  transition:opacity .28s ease}
+#omega-boot.hide{opacity:0;pointer-events:none}
+#omega-boot .ob-mark{width:60px;height:60px;border-radius:16px;
+  background:linear-gradient(135deg,#006F9A,#00A9A4);
+  display:flex;align-items:center;justify-content:center;
+  color:#fff;font:700 30px/1 'DM Sans',sans-serif;
+  box-shadow:0 12px 30px rgba(0,169,164,.35)}
+#omega-boot .ob-spin{width:26px;height:26px;border:3px solid rgba(255,255,255,.25);
+  border-top-color:#00C4BC;border-radius:50%;animation:ob-spin .7s linear infinite}
+#omega-boot .ob-txt{color:#8CA3BE;font:500 13px/1 'DM Sans',sans-serif;letter-spacing:.3px}
+@keyframes ob-spin{to{transform:rotate(360deg)}}
+#omega-boot{animation:ob-failsafe 0s linear 8s forwards}
+@keyframes ob-failsafe{to{opacity:0;pointer-events:none;visibility:hidden}}
+
+/* ══════════ AUTH ══════════ */
+#auth-screen{display:flex;align-items:center;justify-content:center;min-height:100vh;
   background:linear-gradient(135deg,#0B1E35 0%,#1B4F8A 50%,#0D2440 100%);
-  position:relative;overflow:hidden;
-}
-#auth-screen::before{
-  content:'';position:absolute;inset:0;
-  background:radial-gradient(ellipse 800px 600px at 60% 40%, rgba(201,168,76,.12) 0%, transparent 70%);
-  pointer-events:none;
-}
-.auth-card{
-  background:rgba(255,255,255,.96);border-radius:20px;padding:52px 48px;
+  position:relative;overflow:hidden}
+#auth-screen::before{content:'';position:absolute;inset:0;
+  background:radial-gradient(ellipse 800px 600px at 60% 40%, rgba(0,169,164,.12) 0%, transparent 70%);
+  pointer-events:none}
+.auth-card{background:rgba(255,255,255,.96);border-radius:20px;padding:52px 48px;
   width:420px;max-width:92vw;text-align:center;
-  box-shadow:0 40px 80px rgba(0,0,0,.3),0 0 0 1px rgba(255,255,255,.2);
-  position:relative;
-}
-.auth-logo{margin-bottom:28px}
-.auth-logo svg{height:56px;width:auto}
+  box-shadow:0 40px 80px rgba(0,0,0,.3),0 0 0 1px rgba(255,255,255,.2);position:relative}
+.auth-logo{margin-bottom:22px}
+.auth-mark{width:64px;height:64px;margin:0 auto;border-radius:16px;display:flex;align-items:center;justify-content:center;
+  background:linear-gradient(135deg,var(--cs-navy),var(--cs-blue));color:#fff;font-size:34px;font-weight:700;line-height:1;
+  box-shadow:0 8px 20px rgba(8,56,79,.28)}
 .auth-company{font-size:22px;font-weight:700;color:var(--cs-navy);letter-spacing:-.3px;margin-top:10px}
 .auth-sub{font-size:13px;color:var(--cs-sub);margin-top:4px;margin-bottom:32px}
-.auth-divider{height:1px;background:var(--cs-border);margin:20px 0;position:relative}
-.auth-divider span{position:absolute;top:-8px;left:50%;transform:translateX(-50%);background:#fff;padding:0 10px;font-size:11px;color:var(--cs-sub);font-weight:500}
-.btn-google{
-  width:100%;padding:13px 20px;border:1.5px solid var(--cs-border);border-radius:10px;
-  background:#fff;cursor:pointer;font-size:14px;font-weight:600;color:var(--cs-text);
-  display:flex;align-items:center;justify-content:center;gap:10px;font-family:'DM Sans',sans-serif;
-  transition:all .15s;
-}
-.btn-google:hover{border-color:var(--cs-sky);background:#F8FBFF;box-shadow:0 4px 12px rgba(46,134,193,.15)}
+.auth-fields{display:flex;flex-direction:column;gap:10px;margin-bottom:14px;text-align:left}
+.auth-field label{display:block;font-size:11px;font-weight:600;color:var(--cs-sub);text-transform:uppercase;letter-spacing:.4px;margin-bottom:5px}
+.auth-field input{width:100%;padding:12px 14px;border:1.5px solid var(--cs-border);border-radius:10px;font-size:14px;font-family:'DM Sans',sans-serif;color:var(--cs-text);background:#fff;outline:none;transition:border-color .15s}
+.auth-field input:focus{border-color:var(--cs-sky)}
+.btn-email{width:100%;padding:13px 20px;border:none;border-radius:10px;background:var(--cs-navy);color:#fff;cursor:pointer;font-size:14px;font-weight:600;font-family:'DM Sans',sans-serif;transition:background .15s}
+.btn-email:hover{background:var(--cs-blue)}
+.btn-email:disabled{opacity:.6;cursor:default}
+.auth-toggle{margin-top:14px;font-size:12.5px;color:var(--cs-sub)}
+.auth-forgot{margin-top:10px;font-size:12px;text-align:center}
+.auth-forgot a,.auth-toggle a{color:var(--cs-sky);font-weight:600;cursor:pointer;text-decoration:none}
+.auth-forgot a:hover,.auth-toggle a:hover{text-decoration:underline}
 .auth-note{font-size:11px;color:var(--cs-sub);margin-top:16px;line-height:1.5}
 .auth-note strong{color:var(--cs-accent)}
 #auth-err{display:none;margin-top:14px;padding:10px 14px;background:rgba(229,57,53,.08);border:1px solid rgba(229,57,53,.2);border-radius:8px;font-size:12px;color:var(--cs-red);font-weight:500}
+#auth-ok{display:none;margin-top:14px;padding:10px 14px;background:rgba(29,185,84,.08);border:1px solid rgba(29,185,84,.25);border-radius:8px;font-size:12px;color:#137A38;font-weight:500}
 
-/* ── TOPBAR ── */
-#topbar{
-  height:60px;background:var(--cs-navy);display:flex;align-items:center;
-  padding:0 24px;gap:16px;position:sticky;top:0;z-index:200;
-  border-bottom:1px solid rgba(255,255,255,.08);
-}
-.tb-logo{display:flex;align-items:center;gap:10px;text-decoration:none}
-.tb-logo svg{height:32px}
-.tb-logo-txt{color:#fff;font-weight:700;font-size:15px;letter-spacing:-.2px}
-.tb-logo-txt span{color:var(--cs-gold)}
-.tb-sep{width:1px;height:24px;background:rgba(255,255,255,.12)}
-.tb-portal{color:rgba(255,255,255,.45);font-size:12px;font-weight:500;letter-spacing:.5px;text-transform:uppercase}
-.tb-spacer{flex:1}
-.tb-user{display:flex;align-items:center;gap:10px}
-.tb-avatar{width:34px;height:34px;border-radius:50%;object-fit:cover;border:2px solid rgba(201,168,76,.4)}
-.tb-avatar-fallback{width:34px;height:34px;border-radius:50%;background:var(--cs-accent);color:var(--cs-navy);display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700}
-.tb-name{color:rgba(255,255,255,.85);font-size:13px;font-weight:500}
-.btn-signout{background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.15);color:rgba(255,255,255,.6);border-radius:7px;padding:6px 13px;cursor:pointer;font-size:12px;font-weight:500;font-family:'DM Sans',sans-serif;transition:all .12s}
-.btn-signout:hover{background:rgba(255,255,255,.14);color:#fff}
-
-/* ── MAIN CONTENT ── */
-#main{max-width:900px;margin:0 auto;padding:48px 24px}
-
-.dash-label{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1.5px;color:var(--cs-accent)}
-.dash-welcome{font-size:38px;font-weight:700;color:var(--cs-navy);margin-top:6px;letter-spacing:-.5px;line-height:1.1}
-.dash-sub{font-size:15px;color:var(--cs-sub);margin-top:8px}
-
-/* Action cards */
-.action-cards{background:#fff;border:1px solid var(--cs-border);border-radius:14px;margin-top:32px;overflow:hidden;box-shadow:0 2px 12px rgba(0,0,0,.06)}
-.action-card{display:flex;align-items:center;padding:22px 24px;gap:18px;cursor:pointer;transition:background .12s;text-decoration:none;color:inherit;border-bottom:1px solid var(--cs-border)}
-.action-card:last-child{border-bottom:none}
-.action-card:hover{background:#F8F9FA}
-.ac-icon{width:44px;height:44px;border-radius:10px;background:rgba(201,168,76,.12);border:1.5px solid rgba(201,168,76,.3);display:flex;align-items:center;justify-content:center;flex-shrink:0}
-.ac-text{flex:1}
-.ac-title{font-size:16px;font-weight:600;color:var(--cs-navy);margin-bottom:3px}
-.ac-desc{font-size:13px;color:var(--cs-sub)}
-.ac-arrow{color:var(--cs-border);font-size:18px}
-.action-card:hover .ac-arrow{color:var(--cs-sky)}
-
-/* Secondary links */
-.sec-links{margin-top:8px}
-.sec-link{display:flex;align-items:center;padding:16px 24px;gap:16px;cursor:pointer;transition:background .12s;text-decoration:none;color:inherit;border-bottom:1px solid rgba(0,0,0,.04)}
-.sec-link:last-child{border-bottom:none}
-.sec-link:hover{background:rgba(0,0,0,.02)}
-.sl-icon{width:36px;height:36px;border-radius:8px;background:rgba(0,0,0,.04);display:flex;align-items:center;justify-content:center;flex-shrink:0}
-.sl-text{flex:1}
-.sl-title{font-size:14px;font-weight:600;color:var(--cs-text)}
-.sl-desc{font-size:12px;color:var(--cs-sub);margin-top:1px}
-.badge{font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;padding:2px 7px;border-radius:10px;border:1.5px solid}
-.badge-amber{color:#B45309;border-color:#D97706;background:rgba(217,119,6,.08)}
-
-/* Recent projects */
-.sec-head{display:flex;align-items:center;justify-content:space-between;margin-top:40px;margin-bottom:16px}
-.sec-title{font-size:18px;font-weight:700;color:var(--cs-navy)}
-.sec-count{background:var(--cs-accent);color:var(--cs-navy);border-radius:12px;padding:2px 8px;font-size:11px;font-weight:700;margin-left:8px}
-.view-all{font-size:12px;font-weight:600;color:var(--cs-sky);text-decoration:none}
-.view-all:hover{text-decoration:underline}
-
-.proj-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:12px}
-.proj-card{background:#fff;border:1px solid var(--cs-border);border-radius:12px;padding:18px;cursor:pointer;transition:all .15s;text-decoration:none;color:inherit;display:block}
-.proj-card:hover{border-color:var(--cs-sky);box-shadow:0 4px 16px rgba(46,134,193,.12);transform:translateY(-1px)}
-.pc-name{font-size:14px;font-weight:600;color:var(--cs-navy);margin-bottom:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.pc-addr{font-size:11px;color:var(--cs-sub);margin-bottom:10px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.pc-meta{display:flex;gap:6px;flex-wrap:wrap}
-.pc-tag{font-size:10px;font-weight:600;padding:2px 7px;border-radius:10px;background:rgba(27,79,138,.08);color:var(--cs-blue)}
-.pc-date{font-size:10px;color:var(--cs-sub);margin-top:8px}
-.proj-empty{text-align:center;padding:40px;color:var(--cs-sub);background:#fff;border:1px solid var(--cs-border);border-radius:12px}
-.proj-empty svg{opacity:.3;margin-bottom:10px}
-.proj-empty p{font-size:13px}
-
-/* Loading */
-.loading{display:flex;align-items:center;justify-content:center;padding:40px;gap:10px;color:var(--cs-sub);font-size:13px}
-.spin{width:18px;height:18px;border:2px solid var(--cs-border);border-top-color:var(--cs-sky);border-radius:50%;animation:spin .7s linear infinite}
-@keyframes spin{to{transform:rotate(360deg)}}
-
-/* New project modal */
-.modal-bg{position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:500;display:none;align-items:center;justify-content:center;backdrop-filter:blur(4px)}
-.modal-bg.on{display:flex}
-.modal{background:#fff;border-radius:16px;padding:30px;width:460px;max-width:94vw;max-height:85vh;overflow-y:auto;box-shadow:0 24px 60px rgba(0,0,0,.2)}
-.modal h3{font-size:20px;font-weight:700;color:var(--cs-navy);margin-bottom:20px}
-.mrow{margin-bottom:14px}
-.mrow label{display:block;font-size:11px;color:var(--cs-sub);margin-bottom:4px;font-weight:600;text-transform:uppercase;letter-spacing:.5px}
-.mrow input,.mrow select{width:100%;border:1.5px solid var(--cs-border);border-radius:8px;padding:9px 12px;font-size:13px;font-family:'DM Sans',sans-serif;color:var(--cs-text);background:#fff;outline:none;transition:border-color .12s}
-.mrow input:focus,.mrow select:focus{border-color:var(--cs-sky)}
-.mbtns{display:flex;gap:8px;justify-content:flex-end;margin-top:20px}
-.mb-cancel{background:#F4F1EC;border:1px solid var(--cs-border);color:var(--cs-sub);border-radius:8px;padding:9px 18px;cursor:pointer;font-size:13px;font-weight:600;font-family:'DM Sans',sans-serif}
-.mb-create{background:var(--cs-navy);color:#fff;border:none;border-radius:8px;padding:9px 22px;cursor:pointer;font-size:13px;font-weight:600;font-family:'DM Sans',sans-serif;transition:background .12s}
-.mb-create:hover{background:var(--cs-blue)}
-
+/* ══════════ TOPBAR ══════════ */
 #app{display:none}
+#topbar{background:var(--sap-bar);border-bottom:1px solid var(--sap-bar-border);height:56px;
+  display:flex;align-items:center;gap:14px;padding:0 22px;position:sticky;top:0;z-index:60}
+.tb-logo{display:flex;align-items:center;gap:10px;text-decoration:none}
+.tb-omega{height:22px;width:auto;display:block;background:var(--sap-blue);border-radius:5px;padding:5px 7px}
+.tb-sep{width:1px;height:22px;background:var(--sap-bar-border)}
+.tb-portal{color:var(--sap-ink-2);font-size:12px;font-weight:600;letter-spacing:.3px;text-transform:uppercase}
+.tb-client{display:flex;align-items:center;gap:9px;margin-left:4px}
+.tb-client-chip{background:#fff;border:1px solid var(--sap-bar-border);border-radius:7px;padding:4px 8px;display:flex;align-items:center;height:32px}
+.tb-client-txt{font-size:13px;font-weight:700;color:var(--cs-navy);letter-spacing:-.2px;white-space:nowrap}
+.tb-ent-badge{font-size:11px;font-weight:500;color:var(--sap-ink-2);white-space:nowrap}
+.tb-spacer{flex:1}
+.tb-nav{display:flex;align-items:center;gap:2px;margin-left:20px;height:56px}
+.tb-tab{display:flex;align-items:center;gap:6px;text-decoration:none;background:transparent;border:none;border-bottom:3px solid transparent;color:var(--sap-ink);border-radius:0;padding:0 14px;height:56px;cursor:pointer;font:500 13.5px/1 'DM Sans',sans-serif;white-space:nowrap;transition:color .12s,border-color .12s}
+.tb-tab svg{width:15px;height:15px;flex:none;opacity:.7}
+.tb-tab:hover{color:var(--sap-blue)}
+.tb-tab.active{color:var(--sap-blue);border-bottom-color:var(--sap-blue-hi);font-weight:600}
+.tb-tab.active svg{opacity:1}
+.tb-user{display:flex;align-items:center;gap:10px}
+.tb-avatar-fallback{width:32px;height:32px;border-radius:50%;background:var(--sap-blue);color:#fff;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700}
+.tb-name{color:var(--sap-ink);font-size:13px;font-weight:500}
+.btn-signout{background:#fff;border:1px solid var(--sap-bar-border);color:var(--sap-ink);border-radius:7px;padding:7px 13px;font:600 12.5px 'DM Sans',sans-serif;cursor:pointer;transition:border-color .15s,color .15s}
+.btn-signout:hover{border-color:var(--sap-blue);color:var(--sap-blue)}
+
+/* ══════════ PAGE ══════════ */
+#main{max-width:1360px;margin:0 auto;padding:28px 22px 60px}
+.dash-label{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1.5px;color:var(--sap-blue)}
+.dash-welcome{font-size:32px;font-weight:700;color:var(--sap-ink);margin-top:6px;letter-spacing:-.4px;line-height:1.1}
+.dash-date{font-size:13px;color:var(--cs-sub);margin-top:4px;font-weight:600}
+.dash-sub{font-size:14.5px;color:var(--sap-ink-2);margin-top:10px;max-width:760px;line-height:1.55}
+
+.block-head{display:flex;align-items:flex-end;justify-content:space-between;margin:34px 0 14px;gap:16px;flex-wrap:wrap}
+.block-title{font-size:17px;font-weight:700;color:var(--sap-ink)}
+.block-title .cnt{background:var(--sap-blue);color:#fff;border-radius:12px;padding:2px 9px;font-size:11px;font-weight:700;margin-left:8px}
+.block-sub{font-size:12px;color:var(--sap-ink-2);margin-top:2px}
+
+/* Sample-data ribbon — platform convention: amber, only when Firestore is empty */
+.sample-ribbon{display:none;align-items:center;gap:8px;background:#FFFBEB;border:1px solid #FCD34D;
+  color:var(--cs-amber);border-radius:9px;padding:9px 14px;font-size:12.5px;font-weight:600;margin-top:16px}
+.sample-ribbon.on{display:flex}
+.sample-ribbon svg{width:15px;height:15px;flex:none}
+
+/* Funnel strip */
+.ov-strip{background:var(--sap-card);border:1px solid var(--sap-card-border);border-radius:14px;
+  padding:22px 8px;display:flex;box-shadow:0 1px 3px rgba(20,40,60,.05)}
+.ov-cell{flex:1;padding:2px 20px;text-align:center;position:relative;display:flex;flex-direction:column;align-items:center}
+.ov-cell + .ov-cell::before{content:'';position:absolute;left:0;top:4px;bottom:4px;width:1px;background:var(--sap-card-border)}
+.ov-val{font-size:40px;font-weight:400;color:var(--sap-num);line-height:1;letter-spacing:-1px}
+.ov-val .unit{font-size:15px;font-weight:600;color:var(--sap-ink-2);margin-left:3px;letter-spacing:0}
+.ov-label{font-size:13px;font-weight:400;color:var(--sap-ink);margin-top:12px;line-height:1.3}
+.ov-foot{font-size:11px;color:var(--sap-ink-2);margin-top:6px}
+.ov-foot b{color:var(--cs-green);font-weight:700}
+
+.kpi-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-top:12px}
+.kpi{background:var(--sap-card);border:1px solid var(--sap-card-border);border-radius:12px;padding:16px 18px;box-shadow:0 1px 3px rgba(20,40,60,.05);position:relative;overflow:hidden}
+.kpi::before{content:'';position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--sap-blue);opacity:.6}
+.kpi.blue::before{background:var(--sap-blue-hi)}
+.kpi.green::before{background:var(--cs-green)}
+.kpi.amber::before{background:#F59E0B}
+.kpi-label{font-size:11px;font-weight:600;color:var(--sap-ink-2);text-transform:uppercase;letter-spacing:.4px;line-height:1.3;min-height:28px}
+.kpi-val{font-size:26px;font-weight:700;color:var(--sap-num);letter-spacing:-.5px;margin-top:6px}
+.kpi-val .unit{font-size:14px;font-weight:600;color:var(--sap-ink-2);margin-left:3px}
+.kpi-foot{font-size:10.5px;color:var(--sap-ink-2);margin-top:6px}
+
+/* Funnel bars */
+.card{background:var(--sap-card);border:1px solid var(--sap-card-border);border-radius:14px;padding:20px 22px;box-shadow:0 1px 3px rgba(20,40,60,.05)}
+.funnel{display:flex;flex-direction:column;gap:12px}
+.fn-row{display:grid;grid-template-columns:150px 1fr 120px;align-items:center;gap:14px}
+.fn-name{font-size:13px;font-weight:600;color:var(--sap-ink)}
+.fn-track{height:26px;background:#F1F4F7;border-radius:7px;overflow:hidden}
+.fn-fill{display:block;height:100%;border-radius:7px;transition:width .5s cubic-bezier(.4,0,.2,1);min-width:2px}
+.fn-meta{font-size:12px;color:var(--sap-ink-2);text-align:right;font-variant-numeric:tabular-nums}
+.fn-meta b{color:var(--sap-num);font-size:14px;font-weight:700}
+
+/* Tables */
+.table-wrap{background:var(--sap-card);border:1px solid var(--sap-card-border);border-radius:14px;overflow:hidden;box-shadow:0 1px 3px rgba(20,40,60,.05)}
+table{width:100%;border-collapse:collapse}
+thead th{background:#F7F9FB;border-bottom:1px solid var(--sap-card-border);text-align:left;
+  font-size:10.5px;font-weight:700;color:var(--sap-ink-2);text-transform:uppercase;letter-spacing:.5px;padding:11px 14px;white-space:nowrap}
+thead th.num,tbody td.num{text-align:right;font-variant-numeric:tabular-nums}
+tbody td{border-bottom:1px solid #EFF2F5;padding:12px 14px;font-size:13px;color:var(--sap-ink);vertical-align:middle}
+tbody tr:last-child td{border-bottom:none}
+tbody tr:hover{background:#F9FBFD}
+.rep{display:flex;align-items:center;gap:10px}
+.rep-av{width:30px;height:30px;border-radius:50%;background:var(--sap-blue);color:#fff;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;flex:none}
+.rep-nm{font-weight:600;font-size:13px;line-height:1.25}
+.rep-em{font-size:11px;color:var(--sap-ink-2)}
+.bar{height:6px;background:#EDF1F5;border-radius:4px;overflow:hidden;min-width:70px}
+.bar i{display:block;height:100%;border-radius:4px;background:var(--cs-green)}
+.pct{font-size:11px;color:var(--sap-ink-2);margin-top:4px;font-variant-numeric:tabular-nums}
+.table-foot{padding:11px 14px;font-size:11.5px;color:var(--sap-ink-2);background:#F7F9FB;border-top:1px solid var(--sap-card-border)}
+.pill{display:inline-block;padding:3px 9px;border-radius:20px;font-size:10.5px;font-weight:700;letter-spacing:.2px;white-space:nowrap}
+.pill.identified{background:#EEF2F6;color:#475569}
+.pill.contacted{background:#E0F2FE;color:#0369A1}
+.pill.qualified{background:#EDE9FE;color:#6D28D9}
+.pill.proposal{background:#FEF3C7;color:#92400E}
+.pill.won{background:#DCFCE7;color:#15803D}
+.pill.lost{background:#FEE2E2;color:#B91C1C}
+
+/* Activity feed */
+.feed{display:flex;flex-direction:column}
+.feed-item{display:flex;gap:12px;padding:12px 0;border-bottom:1px solid #EFF2F5}
+.feed-item:last-child{border-bottom:none}
+.feed-dot{width:9px;height:9px;border-radius:50%;flex:none;margin-top:5px;background:var(--sap-blue)}
+.feed-main{flex:1;min-width:0}
+.feed-title{font-size:13px;font-weight:600;color:var(--sap-ink);line-height:1.35}
+.feed-meta{font-size:11.5px;color:var(--sap-ink-2);margin-top:2px}
+.feed-when{font-size:11px;color:var(--sap-ink-2);white-space:nowrap;flex:none}
+
+.two-col{display:grid;grid-template-columns:1.35fr 1fr;gap:16px;align-items:start}
+.empty{padding:34px 20px;text-align:center;color:var(--sap-ink-2);font-size:13.5px;line-height:1.6}
+.empty b{display:block;color:var(--sap-ink);font-size:15px;margin-bottom:6px}
+.empty a{color:var(--sap-blue);font-weight:600;text-decoration:none}
+.empty a:hover{text-decoration:underline}
+
+.foot{margin-top:44px;padding-top:18px;border-top:1px solid var(--sap-card-border);
+  font-size:11.5px;color:var(--sap-ink-2);display:flex;justify-content:space-between;gap:14px;flex-wrap:wrap}
+
+@media(max-width:1080px){
+  .kpi-grid{grid-template-columns:repeat(2,1fr)}
+  .two-col{grid-template-columns:1fr}
+  .ov-strip{flex-wrap:wrap;gap:18px 0}
+  .ov-cell{flex:1 1 45%}
+  .ov-cell + .ov-cell::before{display:none}
+}
+@media(max-width:760px){
+  #topbar{gap:8px;padding:0 12px;overflow-x:auto}
+  .tb-client,.tb-portal,.tb-sep{display:none}
+  #main{padding:20px 12px 48px}
+  .dash-welcome{font-size:25px}
+  .kpi-grid{grid-template-columns:1fr}
+  .fn-row{grid-template-columns:110px 1fr;grid-template-areas:'name track' 'meta meta'}
+  .fn-meta{text-align:left}
+  .table-scroll{overflow-x:auto}
+  .table-scroll table{min-width:720px}
+}
+@media(prefers-reduced-motion:reduce){
+  *{animation-duration:.001ms!important;transition-duration:.001ms!important}
+}
 </style>
 </head>
 <body>
 
-<!-- AUTH SCREEN -->
+<!-- ══════════════ BOOT ══════════════ -->
+<div id="omega-boot" role="status" aria-label="Loading">
+  <div class="ob-mark">&Omega;</div>
+  <div class="ob-spin"></div>
+  <div class="ob-txt">Loading your workspace…</div>
+</div>
+<script>
+window._omegaReady = function(){
+  var el = document.getElementById('omega-boot');
+  if (!el || el.classList.contains('hide')) return;
+  el.classList.add('hide');
+  setTimeout(function(){ if (el && el.parentNode) el.parentNode.removeChild(el); }, 320);
+};
+</script>
+
+<!-- ══════════════ AUTH ══════════════ -->
 <div id="auth-screen">
   <div class="auth-card">
-    <div class="auth-logo">
-      <svg viewBox="0 0 120 60" xmlns="http://www.w3.org/2000/svg">
-        <ellipse cx="35" cy="38" rx="24" ry="18" fill="#7B9FD4" opacity=".7"/>
-        <ellipse cx="56" cy="30" rx="28" ry="22" fill="#3A86C8" opacity=".85"/>
-        <ellipse cx="80" cy="35" rx="22" ry="18" fill="#00C2FF" opacity=".8"/>
-        <ellipse cx="45" cy="26" rx="20" ry="16" fill="#8B9FD8" opacity=".65"/>
-        <text x="60" y="56" font-size="9" fill="#C9A84C" text-anchor="middle" font-family="DM Sans, sans-serif" font-weight="700" letter-spacing="2">CLEARSKY USA</text>
-      </svg>
+    <div class="auth-logo"><div class="auth-mark">S</div></div>
+    <div class="auth-company">Solela LLC</div>
+    <div class="auth-sub" id="auth-sub">ComEd capacity prospecting &amp; site development</div>
+
+    <div class="auth-fields">
+      <div class="auth-field">
+        <label for="auth-email">Work email</label>
+        <input id="auth-email" type="email" placeholder="you@chileasing.com" autocomplete="email">
+      </div>
+      <div class="auth-field">
+        <label for="auth-pass">Password</label>
+        <input id="auth-pass" type="password" placeholder="••••••••" autocomplete="current-password">
+      </div>
+      <div class="auth-field" id="auth-name-wrap" style="display:none">
+        <label for="auth-name">Full name</label>
+        <input id="auth-name" type="text" placeholder="Jane Smith" autocomplete="name">
+      </div>
     </div>
-    <div class="auth-company">BESS Site Portal</div>
-    <div class="auth-sub">Project management & site map designer</div>
-    <button class="btn-google" id="google-signin-btn" onclick="signInWithGoogle()">
-      <svg width="18" height="18" viewBox="0 0 24 24"><path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/><path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/><path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/><path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/></svg>
-      Sign in with Google
-    </button>
-    <p class="auth-note">Access restricted to <strong>@clearsky-usa.com</strong> accounts</p>
+    <button class="btn-email" id="email-auth-btn" onclick="emailAuth()">Sign in</button>
+    <div class="auth-forgot" id="auth-forgot-wrap">
+      <a onclick="sendPasswordReset()" id="auth-forgot-link">Forgot password?</a>
+    </div>
+    <div class="auth-toggle" id="auth-toggle-wrap">
+      New to the Solela workspace? <a onclick="toggleAuthMode()" id="auth-toggle-link">Create an account</a>
+    </div>
+
+    <p class="auth-note" style="margin-top:22px">Access restricted to <strong>@chileasing.com</strong> accounts · Powered by ClearSky-OMEGA</p>
     <div id="auth-err"></div>
+    <div id="auth-ok"></div>
   </div>
 </div>
 
-<!-- PORTAL APP -->
+<!-- ══════════════ PORTAL APP ══════════════ -->
 <div id="app">
-  <!-- TOPBAR -->
+
   <div id="topbar">
     <a href="/" class="tb-logo">
-      <svg viewBox="0 0 80 44" xmlns="http://www.w3.org/2000/svg">
-        <ellipse cx="22" cy="28" rx="18" ry="13" fill="#7B9FD4" opacity=".7"/>
-        <ellipse cx="38" cy="22" rx="20" ry="15" fill="#3A86C8" opacity=".85"/>
-        <ellipse cx="56" cy="26" rx="16" ry="12" fill="#00C2FF" opacity=".8"/>
-        <ellipse cx="30" cy="18" rx="14" ry="11" fill="#8B9FD8" opacity=".65"/>
-      </svg>
-      <span class="tb-logo-txt">Clear<span>Sky</span></span>
+      <img src="/clearsky-omega-mark-white.png" alt="OMEGA" class="tb-omega" onerror="this.style.display='none'">
     </a>
     <div class="tb-sep"></div>
-    <span class="tb-portal">Project Portal</span>
+    <span class="tb-portal">EnergyOS</span>
+    <div class="tb-client">
+      <span class="tb-client-chip"><span id="tb-client-logo" class="tb-client-txt">Solela LLC</span></span>
+      <span class="tb-ent-badge" id="tb-ent-badge">Enterprise Account</span>
+    </div>
+    <div class="tb-nav">
+      <a class="tb-tab active" href="/">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+        Portal
+      </a>
+      <a class="tb-tab" href="/projects.html">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
+        Projects
+      </a>
+      <a class="tb-tab" id="tab-capacity" href="/comed-capacity.html">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 2 3 14h9l-1 8 10-12h-9z"/></svg>
+        ComEd Capacity
+      </a>
+      <a class="tb-tab" id="tab-editor" href="/editor.html">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 7h20v14H2z"/><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/></svg>
+        Site Map
+      </a>
+    </div>
     <div class="tb-spacer"></div>
     <div class="tb-user">
       <div id="tb-avatar-wrap"></div>
@@ -190,281 +315,762 @@ body{font-family:'DM Sans',sans-serif;background:var(--cs-bg);color:var(--cs-tex
     </div>
   </div>
 
-  <!-- MAIN -->
   <div id="main">
-    <div class="dash-label">DASHBOARD</div>
+
+    <div class="dash-label">COMED CAPACITY PIPELINE</div>
     <div class="dash-welcome" id="welcome-name">Welcome back</div>
-    <div class="dash-sub">Start a new BESS site map, run a pro forma, or resume an existing project.</div>
+    <div class="dash-date" id="dash-date"></div>
+    <div class="dash-sub">Every site your team has identified on the ComEd hosting-capacity map, from first look through to a signed sale and a live site plan.</div>
 
-    <!-- Action cards -->
-    <div class="action-cards">
-
-      <a class="action-card" onclick="openNewProjectModal('bess')">
-        <div class="ac-icon">
-          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#C9A84C" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/></svg>
-        </div>
-        <div class="ac-text">
-          <div class="ac-title">Create a BESS Site Map</div>
-          <div class="ac-desc">BESS wizard, conduit routing, equipment layout on live satellite imagery.</div>
-        </div>
-        <div class="ac-arrow">›</div>
-      </a>
-
-      <!-- ── PRO FORMA CARD (added) ── -->
-      <a class="action-card" href="/proforma.html">
-        <div class="ac-icon">
-          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#C9A84C" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <line x1="18" y1="20" x2="18" y2="10"/>
-            <line x1="12" y1="20" x2="12" y2="4"/>
-            <line x1="6" y1="20" x2="6" y2="14"/>
-            <rect x="2" y="2" width="20" height="20" rx="2" opacity=".15"/>
-          </svg>
-        </div>
-        <div class="ac-text">
-          <div class="ac-title">BESS Pro Forma Calculator</div>
-          <div class="ac-desc">8-step walkthrough — IRR, NPV, value stack, incentives &amp; CRM export for any BESS + EV charging site.</div>
-        </div>
-        <div class="ac-arrow">›</div>
-      </a>
-
-      <a class="action-card" onclick="openNewProjectModal('sandbox')">
-        <div class="ac-icon">
-          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#C9A84C" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
-        </div>
-        <div class="ac-text">
-          <div class="ac-title">Open a Sandbox</div>
-          <div class="ac-desc">Full editor at any address — nothing saved until you name the project.</div>
-        </div>
-        <div class="ac-arrow">›</div>
-      </a>
-
+    <div class="sample-ribbon" id="sample-ribbon">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/><path d="M12 9v4M12 17h.01"/></svg>
+      <span>Sample data — no sites have been saved from the ComEd Capacity map yet. These numbers disappear the moment your first real site is saved.</span>
     </div>
 
-    <!-- Secondary links -->
-    <div class="sec-links">
-      <a class="sec-link" onclick="goToProjects()">
-        <div class="sl-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#6B7A8D" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg></div>
-        <div class="sl-text">
-          <div class="sl-title">My Projects</div>
-          <div class="sl-desc">Search, sort, and resume any saved site map.</div>
-        </div>
-        <div class="ac-arrow" style="color:var(--cs-border)">›</div>
-      </a>
-    </div>
-
-    <!-- Recent Projects -->
-    <div class="sec-head">
+    <!-- ── FUNNEL HEADLINE ── -->
+    <div class="block-head">
       <div>
-        <span class="sec-title">Recent Projects</span>
-        <span class="sec-count" id="proj-count">0</span>
+        <div class="block-title">Pipeline<span class="cnt" id="pipe-count">0</span></div>
+        <div class="block-sub" id="scope-sub">All sites identified on the ComEd capacity map</div>
       </div>
-      <a class="view-all" onclick="goToProjects()">View all ›</a>
     </div>
 
-    <div id="recent-projects">
-      <div class="loading"><div class="spin"></div> Loading projects…</div>
+    <div class="ov-strip" id="ov-strip"></div>
+    <div class="kpi-grid" id="kpi-grid"></div>
+
+    <!-- ── FUNNEL BARS ── -->
+    <div class="block-head">
+      <div>
+        <div class="block-title">Stage conversion</div>
+        <div class="block-sub">Where sites sit today, and the drop-off between each step</div>
+      </div>
+    </div>
+    <div class="card"><div class="funnel" id="funnel"></div></div>
+
+    <!-- ── SALES REP DASHBOARD ── -->
+    <div class="block-head">
+      <div>
+        <div class="block-title">Sales reps<span class="cnt" id="rep-count">0</span></div>
+        <div class="block-sub">Activity and conversion by rep — sites owned, calls made, sales closed</div>
+      </div>
+    </div>
+    <div class="table-wrap">
+      <div class="table-scroll">
+        <table>
+          <thead>
+            <tr>
+              <th>Rep</th>
+              <th class="num">Identified</th>
+              <th class="num">Called</th>
+              <th class="num">In site map</th>
+              <th class="num">Sales</th>
+              <th>Call rate</th>
+              <th>Win rate</th>
+              <th class="num">Contracted kW</th>
+              <th>Last activity</th>
+            </tr>
+          </thead>
+          <tbody id="rep-body"></tbody>
+        </table>
+      </div>
+      <div class="table-foot" id="rep-foot">Call rate = sites contacted ÷ sites identified · Win rate = sales ÷ sites contacted</div>
+    </div>
+
+    <!-- ── ACTIVITY + TOP SITES ── -->
+    <div class="block-head">
+      <div>
+        <div class="block-title">Progress</div>
+        <div class="block-sub">Recent rep activity, and the sites carrying the most deliverable capacity</div>
+      </div>
+    </div>
+    <div class="two-col">
+      <div class="table-wrap">
+        <div class="table-scroll">
+          <table>
+            <thead>
+              <tr>
+                <th>Site</th>
+                <th>Feeder</th>
+                <th class="num">Capacity</th>
+                <th>Rep</th>
+                <th>Stage</th>
+              </tr>
+            </thead>
+            <tbody id="site-body"></tbody>
+          </table>
+        </div>
+        <div class="table-foot">Top sites by deliverable hosting capacity</div>
+      </div>
+      <div class="card">
+        <div style="font-size:13px;font-weight:700;color:var(--sap-ink);margin-bottom:4px">Recent activity</div>
+        <div class="feed" id="feed"></div>
+      </div>
+    </div>
+
+    <div class="foot">
+      <span>Powered by <strong style="color:var(--cs-navy)">ClearSky-OMEGA</strong></span>
+      <span id="foot-org"></span>
     </div>
   </div>
 </div>
 
-<!-- NEW PROJECT MODAL -->
-<div class="modal-bg" id="new-proj-modal">
-  <div class="modal">
-    <h3>New Project</h3>
-    <div class="mrow">
-      <label>Project / Site Name</label>
-      <input id="np-name" placeholder="e.g. Riverside BESS 5MWh" autofocus>
-    </div>
-    <div class="mrow">
-      <label>Site Address</label>
-      <input id="np-addr" placeholder="e.g. 1234 Main St, Clinton, IA 52732">
-    </div>
-    <div class="mrow">
-      <label>Project Type</label>
-      <select id="np-type">
-        <option value="bess">BESS – Battery Energy Storage System</option>
-        <option value="dcfc">DCFC – DC Fast Charging</option>
-        <option value="solar">Solar + Storage</option>
-        <option value="other">Other</option>
-      </select>
-    </div>
-    <div class="mrow">
-      <label>Client / Customer</label>
-      <input id="np-client" placeholder="e.g. City of Clinton">
-    </div>
-    <div class="mbtns">
-      <button class="mb-cancel" onclick="closeNewProjectModal()">Cancel</button>
-      <button class="mb-create" onclick="createProject()">Create & Open Editor →</button>
-    </div>
-  </div>
-</div>
-
-<!-- FIREBASE SDKs -->
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
 <script src="/config.js"></script>
 
 <script>
-// ── FIREBASE INIT ──────────────────────────────────────────
-const CFG = window.CLEARSKY_CONFIG;
-firebase.initializeApp(CFG.firebase);
-const auth = firebase.auth();
-const db = firebase.firestore();
-let currentUser = null;
+/* ══════════════════════════════════════════════════════════════════════
+   SOLELA · COMED CAPACITY PORTAL
+   ----------------------------------------------------------------------
+   Scope of this deployment: Projects, BESS Site Map (editor), and the
+   ComEd Capacity map. No marketplace, no tool catalog, no pro-forma suite.
 
-// ── AUTH STATE ────────────────────────────────────────────
-auth.onAuthStateChanged(user => {
-  if (user) {
-    const email = user.email || '';
-    const allowed = !CFG.allowedDomain || email.endsWith('@' + CFG.allowedDomain);
-    if (!allowed) {
-      showAuthErr('Access restricted to @' + CFG.allowedDomain + ' accounts.');
-      auth.signOut();
-      return;
-    }
-    currentUser = user;
-    showApp(user);
-    loadRecentProjects();
-  } else {
-    currentUser = null;
-    showLogin();
+   The dashboard reads ONE collection — `sites` — which the ComEd
+   Capacity tool writes as reps work the map. See README.md for the field
+   contract. Nothing here writes to that collection; this page is read-only.
+   ══════════════════════════════════════════════════════════════════════ */
+
+/* ── Tenant registry. Trimmed to the orgs that may use THIS portal. ── */
+var WORKSPACES = {
+  'chileasing.com': {
+    orgId: 'chileasing.com',
+    clientName: 'Solela LLC',
+    accountTier: 'Enterprise',
+    allowedDomain: 'chileasing.com',
+    tools: ['editor', 'comed']
+  },
+  /* ClearSky internal — for support and QA against the same data. */
+  'csebuilders.com': {
+    orgId: 'chileasing.com',          // reads the Solela dataset
+    clientName: 'Solela LLC',
+    accountTier: 'Internal',
+    allowedDomain: 'csebuilders.com',
+    tools: ['editor', 'comed']
   }
-});
+};
 
-function showLogin() {
+function domainOf(email){ return (email||'').split('@')[1] ? email.split('@')[1].toLowerCase() : ''; }
+function resolveWorkspace(email){
+  var d = domainOf(email);
+  return (d && WORKSPACES.hasOwnProperty(d)) ? WORKSPACES[d] : null;
+}
+
+var WORKSPACE = null;
+window.OMEGA_WORKSPACE = null;
+
+/* ══════════ FIREBASE ══════════ */
+var CFG, auth, db, currentUser = null, currentOrg = null;
+
+function _initFirebase(){
+  if (typeof firebase === 'undefined' || !window.CLEARSKY_CONFIG){
+    setTimeout(_initFirebase, 120); return;
+  }
+  CFG = window.CLEARSKY_CONFIG;
+  try { firebase.initializeApp(CFG.firebase); }
+  catch(e){ if(!/already exists/.test(e.message)) console.error('Firebase init:', e); }
+  auth = firebase.auth();
+  db = firebase.firestore();
+  _wireAuth();
+}
+
+function _wireAuth(){
+  auth.onAuthStateChanged(function(user){
+    if (window._omegaReady) window._omegaReady();
+    if (user){
+      var email = user.email || '';
+      var ws = resolveWorkspace(email);
+      if (!ws){
+        showAuthErr('No ClearSky-OMEGA workspace is provisioned for @' + (domainOf(email) || 'your domain') + '. Contact your administrator to be added.');
+        auth.signOut();
+        return;
+      }
+      WORKSPACE = ws;
+      window.OMEGA_WORKSPACE = ws;
+      currentUser = user;
+      currentOrg = ws.orgId;
+      showApp(user);
+      loadDashboard();
+    } else {
+      currentUser = null; currentOrg = null;
+      WORKSPACE = null; window.OMEGA_WORKSPACE = null;
+      showLogin();
+    }
+  });
+}
+
+function showLogin(){
   document.getElementById('auth-screen').style.display = 'flex';
   document.getElementById('app').style.display = 'none';
 }
 
-function showApp(user) {
+function showApp(user){
   document.getElementById('auth-screen').style.display = 'none';
   document.getElementById('app').style.display = 'block';
 
-  // Welcome
-  const first = (user.displayName || user.email || 'there').split(' ')[0];
-  document.getElementById('welcome-name').textContent = 'Welcome back, ' + first;
-  document.getElementById('tb-name').textContent = user.displayName || user.email;
+  var name = user.displayName || (user.email || '').split('@')[0];
+  document.getElementById('tb-name').textContent = name;
+  document.getElementById('welcome-name').textContent = 'Welcome back, ' + firstName(name);
+  document.getElementById('dash-date').textContent = new Date().toLocaleDateString('en-US',
+    { weekday:'long', month:'long', day:'numeric', year:'numeric' });
 
-  // Avatar
-  const wrap = document.getElementById('tb-avatar-wrap');
-  if (user.photoURL) {
-    wrap.innerHTML = `<img class="tb-avatar" src="${user.photoURL}" onerror="this.style.display='none'">`;
-  } else {
-    wrap.innerHTML = `<div class="tb-avatar-fallback">${first[0].toUpperCase()}</div>`;
-  }
+  var chip = document.getElementById('tb-client-logo');
+  if (chip) chip.textContent = WORKSPACE.clientName;
+  var badge = document.getElementById('tb-ent-badge');
+  if (badge) badge.textContent = WORKSPACE.accountTier + ' Account';
+  var foot = document.getElementById('foot-org');
+  if (foot) foot.textContent = WORKSPACE.clientName + ' · ' + WORKSPACE.orgId;
+
+  var av = document.getElementById('tb-avatar-wrap');
+  if (av) av.innerHTML = '<div class="tb-avatar-fallback">' + initials(name) + '</div>';
+
+  /* Site Map opens the shared editor scoped to this tenant. */
+  var ed = document.getElementById('tab-editor');
+  if (ed) ed.href = '/editor.html?org=' + encodeURIComponent(currentOrg);
+  var cap = document.getElementById('tab-capacity');
+  if (cap) cap.href = '/comed-capacity.html?org=' + encodeURIComponent(currentOrg);
 }
 
-function signInWithGoogle() {
-  const btn = document.getElementById('google-signin-btn');
+function firstName(n){ return (n||'').split(' ')[0] || 'there'; }
+function initials(n){
+  var p = (n||'').trim().split(/\s+/);
+  if (!p[0]) return '–';
+  return (p.length > 1 ? (p[0][0] + p[p.length-1][0]) : p[0].slice(0,2)).toUpperCase();
+}
+
+function signOut(){ auth.signOut(); }
+
+/* ══════════ EMAIL / PASSWORD AUTH ══════════ */
+var authMode = 'signin';
+
+function toggleAuthMode(){
+  authMode = (authMode === 'signin') ? 'signup' : 'signin';
+  var isSignup = authMode === 'signup';
+  document.getElementById('auth-name-wrap').style.display = isSignup ? 'block' : 'none';
+  document.getElementById('email-auth-btn').textContent = isSignup ? 'Create account' : 'Sign in';
+  var fw = document.getElementById('auth-forgot-wrap'); if (fw) fw.style.display = isSignup ? 'none' : 'block';
+  document.getElementById('auth-toggle-wrap').innerHTML = isSignup
+    ? 'Already have an account? <a onclick="toggleAuthMode()">Sign in</a>'
+    : 'New to the Solela workspace? <a onclick="toggleAuthMode()">Create an account</a>';
+  document.getElementById('auth-sub').textContent = isSignup
+    ? 'Create your workspace account'
+    : 'ComEd capacity prospecting & site development';
+  clearAuthMsg();
+}
+
+function emailAuth(){
+  clearAuthMsg();
+  var email = document.getElementById('auth-email').value.trim();
+  var pass = document.getElementById('auth-pass').value;
+  if (!email || !pass){ showAuthErr('Enter your email and password.'); return; }
+  if (!resolveWorkspace(email)){
+    showAuthErr('No ClearSky-OMEGA workspace is provisioned for that email domain. Contact your administrator.');
+    return;
+  }
+  var btn = document.getElementById('email-auth-btn');
   btn.disabled = true;
-  btn.textContent = 'Signing in…';
-  const provider = new firebase.auth.GoogleAuthProvider();
-  if (CFG.allowedDomain) provider.setCustomParameters({ hd: CFG.allowedDomain });
-  auth.signInWithPopup(provider).catch(err => {
-    showAuthErr(err.message);
-    btn.disabled = false;
-    btn.innerHTML = `<svg width="18" height="18" viewBox="0 0 24 24"><path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/><path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/><path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/><path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/></svg> Sign in with Google`;
-  });
+  btn.textContent = (authMode === 'signup') ? 'Creating…' : 'Signing in…';
+
+  if (authMode === 'signup'){
+    var name = document.getElementById('auth-name').value.trim();
+    auth.createUserWithEmailAndPassword(email, pass)
+      .then(function(cred){ if (name && cred.user) return cred.user.updateProfile({ displayName:name }); })
+      .catch(function(err){ showAuthErr(friendlyAuthErr(err)); resetEmailBtn(); });
+  } else {
+    auth.signInWithEmailAndPassword(email, pass)
+      .catch(function(err){ showAuthErr(friendlyAuthErr(err)); resetEmailBtn(); });
+  }
 }
 
-function signOut() {
-  auth.signOut();
+function resetEmailBtn(){
+  var btn = document.getElementById('email-auth-btn');
+  btn.disabled = false;
+  btn.textContent = (authMode === 'signup') ? 'Create account' : 'Sign in';
 }
 
-function showAuthErr(msg) {
-  const el = document.getElementById('auth-err');
-  el.textContent = msg;
+function friendlyAuthErr(err){
+  var m = (err && err.code) || '';
+  if (m === 'auth/email-already-in-use') return 'That email already has an account — try signing in.';
+  if (m === 'auth/invalid-email') return 'That email address looks invalid.';
+  if (m === 'auth/weak-password') return 'Password should be at least 6 characters.';
+  if (m === 'auth/wrong-password' || m === 'auth/invalid-credential' || m === 'auth/user-not-found') return '__CRED__';
+  if (m === 'auth/too-many-requests') return 'Too many attempts. Try again in a few minutes, or reset your password.';
+  return (err && err.message) || 'Something went wrong. Try again.';
+}
+
+function showAuthCredErr(){
+  var el = document.getElementById('auth-err');
+  if (!el) return;
+  el.innerHTML = 'Incorrect password. <a onclick="sendPasswordReset()" style="color:var(--cs-sky);font-weight:600;cursor:pointer;text-decoration:underline">Reset it</a> if you forgot.';
   el.style.display = 'block';
+  var ok = document.getElementById('auth-ok'); if (ok) ok.style.display = 'none';
+}
+function showAuthErr(msg){
+  if (msg === '__CRED__'){ showAuthCredErr(); return; }
+  var el = document.getElementById('auth-err');
+  el.textContent = msg; el.style.display = 'block';
+  var ok = document.getElementById('auth-ok'); if (ok) ok.style.display = 'none';
+}
+function clearAuthMsg(){
+  var e = document.getElementById('auth-err'); if (e) e.style.display = 'none';
+  var o = document.getElementById('auth-ok'); if (o) o.style.display = 'none';
+}
+function showAuthOk(msg){
+  var el = document.getElementById('auth-ok');
+  if (el){ el.textContent = msg; el.style.display = 'block'; }
+  var e = document.getElementById('auth-err'); if (e) e.style.display = 'none';
 }
 
-// ── PROJECTS ──────────────────────────────────────────────
-async function loadRecentProjects() {
-  const container = document.getElementById('recent-projects');
-  if (!currentUser) return;
-  try {
-    const snap = await db.collection('projects')
-      .where('uid', '==', currentUser.uid)
-      .orderBy('updatedAt', 'desc')
-      .limit(6)
-      .get();
+function sendPasswordReset(){
+  clearAuthMsg();
+  var email = document.getElementById('auth-email').value.trim();
+  if (!email){ showAuthErr('Enter your email above, then tap “Forgot password?”'); return; }
+  if (!resolveWorkspace(email)){
+    showAuthErr('No workspace is provisioned for that email domain. Contact your administrator.');
+    return;
+  }
+  var link = document.getElementById('auth-forgot-link');
+  if (link) link.textContent = 'Sending…';
+  auth.sendPasswordResetEmail(email)
+    .then(function(){ showAuthOk('Password reset email sent to ' + email + '. Check your inbox (and spam).'); })
+    .catch(function(err){
+      var code = (err && err.code) || '';
+      if (code === 'auth/invalid-email') showAuthErr('That email address looks invalid.');
+      else if (code === 'auth/too-many-requests') showAuthErr('Too many attempts. Try again in a few minutes.');
+      else showAuthErr('Could not send reset email. Double-check the address and try again.');
+    })
+    .then(function(){ if (link) link.textContent = 'Forgot password?'; });
+}
 
-    document.getElementById('proj-count').textContent = snap.size;
-    if (snap.empty) {
-      container.innerHTML = `<div class="proj-empty"><svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg><p>No projects yet. Create your first BESS site map above.</p></div>`;
-      return;
+document.addEventListener('keydown', function(e){
+  if (e.key === 'Enter' && document.getElementById('auth-screen').style.display !== 'none'){
+    var t = e.target;
+    if (t && (t.id === 'auth-email' || t.id === 'auth-pass' || t.id === 'auth-name')){
+      e.preventDefault(); emailAuth();
     }
-
-    const cards = snap.docs.map(doc => {
-      const d = doc.data();
-      const date = d.updatedAt?.toDate ? d.updatedAt.toDate().toLocaleDateString() : '—';
-      const tags = [d.type || 'BESS'];
-      if (d.bessList?.length) tags.push(d.bessList.length + ' BESS unit(s)');
-      return `<a class="proj-card" onclick="openProject('${doc.id}')">
-        <div class="pc-name">${escHtml(d.name || 'Untitled')}</div>
-        <div class="pc-addr">${escHtml(d.address || 'No address')}</div>
-        <div class="pc-meta">${tags.map(t=>`<span class="pc-tag">${t}</span>`).join('')}</div>
-        <div class="pc-date">Updated ${date}</div>
-      </a>`;
-    });
-    container.innerHTML = `<div class="proj-grid">${cards.join('')}</div>`;
-  } catch(e) {
-    console.error('Error loading projects:', e);
-    container.innerHTML = `<div class="proj-empty"><p>Error loading projects. Check Firestore rules.</p></div>`;
   }
-}
-
-function goToProjects() {
-  window.location.href = '/projects.html';
-}
-
-// ── NEW PROJECT MODAL ──────────────────────────────────────
-let newProjType = 'bess';
-function openNewProjectModal(type) {
-  newProjType = type;
-  document.getElementById('np-type').value = type;
-  document.getElementById('new-proj-modal').classList.add('on');
-  setTimeout(()=>document.getElementById('np-name').focus(), 100);
-}
-function closeNewProjectModal() {
-  document.getElementById('new-proj-modal').classList.remove('on');
-}
-
-async function createProject() {
-  const name = document.getElementById('np-name').value.trim();
-  const addr = document.getElementById('np-addr').value.trim();
-  const type = document.getElementById('np-type').value;
-  const client = document.getElementById('np-client').value.trim();
-  if (!name) { alert('Please enter a project name.'); return; }
-
-  try {
-    const ref = await db.collection('projects').add({
-      uid: currentUser.uid,
-      name, address: addr, type, client,
-      createdAt: firebase.firestore.FieldValue.serverTimestamp(),
-      updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
-      elements: [], conduits: [], bessList: [], annotations: []
-    });
-    closeNewProjectModal();
-    openProject(ref.id);
-  } catch(e) {
-    alert('Error creating project: ' + e.message);
-  }
-}
-
-function openProject(id) {
-  window.location.href = `/editor.html?id=${id}`;
-}
-
-// ── UTILS ─────────────────────────────────────────────────
-function escHtml(s) {
-  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
-}
-
-// Close modal on backdrop click
-document.getElementById('new-proj-modal').addEventListener('click', function(e) {
-  if (e.target === this) closeNewProjectModal();
 });
+
+_initFirebase();
+</script>
+
+<script>
+/* ══════════════════════════════════════════════════════════════════════
+   DASHBOARD — reads `sites`, derives the funnel and the rep board.
+
+   FIELD CONTRACT (written by the ComEd Capacity tool; see README.md):
+     orgId              string   tenant scope — required, matches security rules
+     siteName, address  string
+     feeder             string   ComEd feeder / circuit id
+     hostingCapacityKw  number   deliverable capacity from the hosting-capacity layer
+     status             string   identified|contacted|qualified|proposal|won|lost
+     repEmail, repName  string   the sales rep who owns the site
+     callCount          number   calls logged against the site
+     contactedAt        date     first successful contact
+     projectId          string   set when the site is pushed into the Site Map editor
+     contractedKw       number   capacity on a signed deal (status 'won')
+     identifiedAt, updatedAt, wonAt   dates
+
+   Anything missing degrades to a sensible default rather than breaking a row.
+   ══════════════════════════════════════════════════════════════════════ */
+
+var STAGES = [
+  { key:'identified', label:'Identified', color:'#94A3B8' },
+  { key:'contacted',  label:'Called',     color:'#0EA5E9' },
+  { key:'qualified',  label:'Qualified',  color:'#8B5CF6' },
+  { key:'proposal',   label:'Proposal',   color:'#F59E0B' },
+  { key:'won',        label:'Sold',       color:'#1DB954' }
+];
+
+/* The ComEd Capacity tool has its OWN stage vocabulary and it is the thing
+   actually writing these rows, so it wins and this maps onto it rather than
+   the other way round:
+
+     tool 'target'  -> identified   (a site picked off the map, not yet worked)
+     tool 'dnc'     -> lost         (do-not-call is a dead outcome; it must
+                                     leave the open pipeline, but it is NOT a
+                                     loss anyone should be measured on — see
+                                     the note on the rep board below)
+
+   contacted / qualified / proposal / won / lost already match.
+   Anything unrecognised falls back to 'identified' rather than breaking the
+   row, which is why the Firestore rules deliberately do not enumerate
+   status values. */
+var STAGE_ALIAS = { target:'identified', dnc:'lost', '':'identified' };
+var STAGE_KEYS = STAGES.map(function(s){ return s.key; });
+var STAGE_LABEL = {};
+STAGES.forEach(function(s){ STAGE_LABEL[s.key] = s.label; });
+STAGE_LABEL.lost = 'Lost';
+
+var IS_SAMPLE = false;
+
+/* ══════════════════════════════════════════════════════════════════════
+   SAMPLE PIPELINE — renders ONLY while `sites` is empty, behind the
+   amber ribbon, and disappears the moment a real site is saved. Scoped to
+   plausible ComEd / Cook County C&I hosting capacity so a demo reads true.
+   Delete this block once the tool is writing live data.
+   ══════════════════════════════════════════════════════════════════════ */
+function _d(daysAgo){ return new Date(Date.now() - daysAgo * 86400000); }
+
+var SAMPLE_SITES = [
+  { siteName:'Cicero Ave Cold Storage', address:'4820 S Cicero Ave, Chicago, IL', feeder:'FDR-13842',
+    hostingCapacityKw:6400, status:'won', repEmail:'m.reyes@chileasing.com', repName:'Marisol Reyes',
+    callCount:6, contactedAt:_d(58), projectId:'demo-cicero', contractedKw:5800,
+    identifiedAt:_d(74), wonAt:_d(9), updatedAt:_d(9) },
+
+  { siteName:'Pulaski Industrial Park', address:'3311 S Pulaski Rd, Chicago, IL', feeder:'FDR-11208',
+    hostingCapacityKw:5100, status:'won', repEmail:'d.okafor@chileasing.com', repName:'Daniel Okafor',
+    callCount:4, contactedAt:_d(46), projectId:'demo-pulaski', contractedKw:4600,
+    identifiedAt:_d(63), wonAt:_d(17), updatedAt:_d(17) },
+
+  { siteName:'Bedford Park Distribution', address:'6700 S Central Ave, Bedford Park, IL', feeder:'FDR-14771',
+    hostingCapacityKw:7900, status:'proposal', repEmail:'m.reyes@chileasing.com', repName:'Marisol Reyes',
+    callCount:5, contactedAt:_d(31), projectId:'demo-bedford',
+    identifiedAt:_d(44), updatedAt:_d(4) },
+
+  { siteName:'Elk Grove Tech Campus', address:'1150 Pratt Blvd, Elk Grove Village, IL', feeder:'FDR-16033',
+    hostingCapacityKw:8200, status:'proposal', repEmail:'a.whitfield@chileasing.com', repName:'Aisha Whitfield',
+    callCount:3, contactedAt:_d(26), projectId:'demo-elkgrove',
+    identifiedAt:_d(39), updatedAt:_d(6) },
+
+  { siteName:'Harlem Ave Manufacturing', address:'2400 N Harlem Ave, Elmwood Park, IL', feeder:'FDR-12094',
+    hostingCapacityKw:3600, status:'qualified', repEmail:'d.okafor@chileasing.com', repName:'Daniel Okafor',
+    callCount:3, contactedAt:_d(19), identifiedAt:_d(35), updatedAt:_d(11) },
+
+  { siteName:'Franklin Park Logistics', address:'9500 Belmont Ave, Franklin Park, IL', feeder:'FDR-15520',
+    hostingCapacityKw:4400, status:'qualified', repEmail:'a.whitfield@chileasing.com', repName:'Aisha Whitfield',
+    callCount:2, contactedAt:_d(15), projectId:'demo-franklin',
+    identifiedAt:_d(30), updatedAt:_d(3) },
+
+  { siteName:'Stevenson Commerce Center', address:'7200 S Kedzie Ave, Chicago, IL', feeder:'FDR-13106',
+    hostingCapacityKw:2900, status:'contacted', repEmail:'m.reyes@chileasing.com', repName:'Marisol Reyes',
+    callCount:2, contactedAt:_d(8), identifiedAt:_d(22), updatedAt:_d(8) },
+
+  { siteName:'Melrose Park Foundry', address:'1900 N 25th Ave, Melrose Park, IL', feeder:'FDR-12667',
+    hostingCapacityKw:5600, status:'contacted', repEmail:'j.tran@chileasing.com', repName:'Jenny Tran',
+    callCount:1, contactedAt:_d(5), identifiedAt:_d(18), updatedAt:_d(5) },
+
+  { siteName:'Archer Heights Plant', address:'4700 S Kilbourn Ave, Chicago, IL', feeder:'FDR-13842',
+    hostingCapacityKw:3100, status:'contacted', repEmail:'d.okafor@chileasing.com', repName:'Daniel Okafor',
+    callCount:2, contactedAt:_d(12), identifiedAt:_d(25), updatedAt:_d(12) },
+
+  { siteName:'Northlake Fulfillment', address:'400 W North Ave, Northlake, IL', feeder:'FDR-15102',
+    hostingCapacityKw:6800, status:'identified', repEmail:'a.whitfield@chileasing.com', repName:'Aisha Whitfield',
+    callCount:0, identifiedAt:_d(7), updatedAt:_d(7) },
+
+  { siteName:'Clearing Yard Warehouse', address:'5601 W 65th St, Chicago, IL', feeder:'FDR-14330',
+    hostingCapacityKw:2200, status:'identified', repEmail:'j.tran@chileasing.com', repName:'Jenny Tran',
+    callCount:0, identifiedAt:_d(6), updatedAt:_d(6) },
+
+  { siteName:'Bensenville Freight Hub', address:'1050 Thomas Dr, Bensenville, IL', feeder:'FDR-16244',
+    hostingCapacityKw:4900, status:'identified', repEmail:'j.tran@chileasing.com', repName:'Jenny Tran',
+    callCount:0, identifiedAt:_d(3), updatedAt:_d(3) },
+
+  { siteName:'Cal-Sag Processing', address:'13100 S Doty Ave, Chicago, IL', feeder:'FDR-11875',
+    hostingCapacityKw:1800, status:'identified', repEmail:'m.reyes@chileasing.com', repName:'Marisol Reyes',
+    callCount:0, identifiedAt:_d(2), updatedAt:_d(2) },
+
+  { siteName:'Summit Rail Terminal', address:'6100 S Archer Rd, Summit, IL', feeder:'FDR-13106',
+    hostingCapacityKw:3400, status:'lost', repEmail:'d.okafor@chileasing.com', repName:'Daniel Okafor',
+    callCount:3, contactedAt:_d(40), identifiedAt:_d(52), updatedAt:_d(21) }
+];
+
+/* ── small helpers ── */
+function toDate(v){
+  if (!v) return null;
+  if (typeof v.toDate === 'function') return v.toDate();   // Firestore Timestamp
+  if (v instanceof Date) return v;
+  var d = new Date(v);
+  return isNaN(d.getTime()) ? null : d;
+}
+function esc(s){
+  return String(s == null ? '' : s)
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+    .replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+}
+function num(v){ var n = Number(v); return isFinite(n) ? n : 0; }
+function fmtN(n){ return num(n).toLocaleString('en-US'); }
+function pct(a, b){ return b > 0 ? Math.round((a / b) * 100) : 0; }
+function ago(d){
+  if (!d) return '—';
+  var s = Math.floor((Date.now() - d.getTime()) / 1000);
+  if (s < 60) return 'just now';
+  if (s < 3600) return Math.floor(s/60) + 'm ago';
+  if (s < 86400) return Math.floor(s/3600) + 'h ago';
+  var dd = Math.floor(s/86400);
+  if (dd === 1) return 'yesterday';
+  if (dd < 30) return dd + 'd ago';
+  return d.toLocaleDateString('en-US', { month:'short', day:'numeric' });
+}
+
+/* ── Normalize one Firestore doc (or sample row) into the shape we render ── */
+function normalize(d, id){
+  var raw = d.status || '';
+  if (STAGE_ALIAS.hasOwnProperty(raw)) raw = STAGE_ALIAS[raw];
+  var status = (STAGE_KEYS.indexOf(raw) >= 0 || raw === 'lost') ? raw : 'identified';
+  var isDnc = (d.status === 'dnc');
+  var stageIdx = STAGE_KEYS.indexOf(status);
+  var calls = num(d.callCount);
+  var contactedAt = toDate(d.contactedAt);
+  return {
+    id: id,
+    siteName: d.siteName || d.name || 'Untitled site',
+    address: d.address || '',
+    feeder: d.feeder || '—',
+    capacityKw: num(d.hostingCapacityKw),
+    status: status,
+    stageIdx: stageIdx,
+    repEmail: (d.repEmail || '').toLowerCase(),
+    repName: d.repName || '',
+    callCount: calls,
+    /* "Called" = anyone who logged a call, recorded a contact, or moved the
+       site past Identified. Any one of the three is enough. */
+    called: calls > 0 || !!contactedAt || stageIdx >= 1,
+    inEditor: !!d.projectId,
+    projectId: d.projectId || '',
+    won: status === 'won',
+    lost: status === 'lost',
+    dnc: isDnc,
+    contractedKw: num(d.contractedKw),
+    identifiedAt: toDate(d.identifiedAt),
+    contactedAt: contactedAt,
+    wonAt: toDate(d.wonAt),
+    updatedAt: toDate(d.updatedAt) || toDate(d.wonAt) || contactedAt || toDate(d.identifiedAt)
+  };
+}
+
+/* ══════════ LOAD ══════════ */
+function loadDashboard(){
+  if (!db || !currentOrg){ render(SAMPLE_SITES.map(function(s,i){ return normalize(s,'s'+i); }), true); return; }
+  db.collection('sites').where('orgId','==',currentOrg).get()
+    .then(function(snap){
+      var rows = [];
+      snap.forEach(function(doc){ rows.push(normalize(doc.data(), doc.id)); });
+      if (!rows.length){
+        /* Platform convention: sample data only while the collection is empty. */
+        render(SAMPLE_SITES.map(function(s,i){ return normalize(s,'s'+i); }), true);
+      } else {
+        render(rows, false);
+      }
+    })
+    .catch(function(e){
+      console.error('sites read failed:', e);
+      renderError();
+    });
+}
+
+function renderError(){
+  document.getElementById('ov-strip').innerHTML =
+    '<div class="empty" style="flex:1"><b>Could not load your sites</b>' +
+    'The ComEd site list could not be read. Refresh the page, and if it keeps happening ' +
+    'email <a href="mailto:dev@clearsky-usa.com">dev@clearsky-usa.com</a>.</div>';
+  document.getElementById('kpi-grid').innerHTML = '';
+  document.getElementById('funnel').innerHTML = '';
+  document.getElementById('rep-body').innerHTML = '';
+  document.getElementById('site-body').innerHTML = '';
+  document.getElementById('feed').innerHTML = '';
+}
+
+/* ══════════ RENDER ══════════ */
+function render(rows, isSample){
+  IS_SAMPLE = isSample;
+  document.getElementById('sample-ribbon').className = 'sample-ribbon' + (isSample ? ' on' : '');
+  document.getElementById('scope-sub').textContent = isSample
+    ? 'Illustrative pipeline — replaced by live data on first save'
+    : 'All sites identified on the ComEd capacity map';
+
+  var k = computeKpis(rows);
+  renderKpis(k, rows);
+  renderFunnel(rows, k);
+  renderReps(rows);
+  renderSites(rows);
+  renderFeed(rows);
+  document.getElementById('pipe-count').textContent = fmtN(k.identified);
+}
+
+function computeKpis(rows){
+  var k = { identified:0, called:0, inEditor:0, won:0, lost:0, dnc:0, open:0,
+            calls:0, capacityKw:0, contractedKw:0, reps:{} };
+  rows.forEach(function(r){
+    k.identified++;
+    k.capacityKw += r.capacityKw;
+    k.calls += r.callCount;
+    if (r.called) k.called++;
+    if (r.inEditor) k.inEditor++;
+    if (r.won){ k.won++; k.contractedKw += r.contractedKw || r.capacityKw; }
+    if (r.lost) k.lost++;
+    if (r.dnc) k.dnc++;
+    if (!r.won && !r.lost) k.open++;
+    if (r.repEmail) k.reps[r.repEmail] = true;
+  });
+  k.repCount = Object.keys(k.reps).length;
+  return k;
+}
+
+function renderKpis(k){
+  var cells = [
+    { v:k.identified, label:'Sites identified',  foot:'On the ComEd capacity map' },
+    { v:k.called,     label:'Sites called',      foot:pct(k.called, k.identified) + '% of identified' },
+    { v:k.inEditor,   label:'Sites in site map', foot:pct(k.inEditor, k.identified) + '% of identified' },
+    { v:k.won,        label:'Sales made',        foot:pct(k.won, k.called) + '% of sites called' }
+  ];
+  document.getElementById('ov-strip').innerHTML = cells.map(function(c){
+    return '<div class="ov-cell">' +
+      '<div class="ov-val">' + fmtN(c.v) + '</div>' +
+      '<div class="ov-label">' + esc(c.label) + '</div>' +
+      '<div class="ov-foot">' + esc(c.foot) + '</div>' +
+    '</div>';
+  }).join('');
+
+  var mw = (k.capacityKw / 1000);
+  var tiles = [
+    { cls:'blue',  label:'Deliverable capacity identified', val:mw.toFixed(1), unit:'MW',
+      foot:'Hosting capacity across all identified sites' },
+    { cls:'green', label:'Contracted capacity', val:fmtN(Math.round(k.contractedKw)), unit:'kW',
+      foot:k.won + (k.won === 1 ? ' closed sale' : ' closed sales') },
+    { cls:'',      label:'Calls logged', val:fmtN(k.calls), unit:'',
+      foot:'Across ' + k.repCount + (k.repCount === 1 ? ' rep' : ' reps') },
+    /* dnc is reported separately from lost. Both leave the open pipeline,
+       but a do-not-call is the owner's decision and a loss is the rep's
+       outcome — folding them together would quietly penalise whoever works
+       the territory with the most opt-outs. */
+    { cls:'amber', label:'Open pipeline', val:fmtN(k.open), unit:'sites',
+      foot:(k.lost - k.dnc) + ' lost' + (k.dnc ? ' \u00b7 ' + k.dnc + ' do not call' : '') }
+  ];
+  document.getElementById('kpi-grid').innerHTML = tiles.map(function(t){
+    return '<div class="kpi ' + t.cls + '">' +
+      '<div class="kpi-label">' + esc(t.label) + '</div>' +
+      '<div class="kpi-val">' + t.val + (t.unit ? '<span class="unit">' + esc(t.unit) + '</span>' : '') + '</div>' +
+      '<div class="kpi-foot">' + esc(t.foot) + '</div>' +
+    '</div>';
+  }).join('');
+}
+
+/* The four steps of the workflow, drawn from the SAME derived flags as the
+   KPI strip so no two numbers on this page can disagree. Lost sites still
+   count at every step they actually reached — losing a deal doesn't undo
+   the call that was made. Percentages are always "of all identified", which
+   stays honest even if a site is sold without ever getting a site map. */
+function renderFunnel(rows, k){
+  var bars = [
+    { label:'Identified',  n:k.identified, color:'#94A3B8' },
+    { label:'Called',      n:k.called,     color:'#0EA5E9' },
+    { label:'In site map', n:k.inEditor,   color:'#14B8A6' },
+    { label:'Sold',        n:k.won,        color:'#1DB954' }
+  ];
+  var top = bars[0].n || 1;
+  document.getElementById('funnel').innerHTML = bars.map(function(b, i){
+    var share = pct(b.n, top);
+    return '<div class="fn-row">' +
+      '<div class="fn-name">' + esc(b.label) + '</div>' +
+      '<div class="fn-track"><i class="fn-fill" style="width:' + Math.max(0, Math.min(100, share)) + '%;background:' + b.color + '"></i></div>' +
+      '<div class="fn-meta"><b>' + fmtN(b.n) + '</b><br>' +
+        (i === 0 ? 'all sites' : share + '% of identified') + '</div>' +
+    '</div>';
+  }).join('');
+}
+
+function renderReps(rows){
+  var map = {};
+  rows.forEach(function(r){
+    var key = r.repEmail || '__unassigned';
+    if (!map[key]){
+      map[key] = { email:r.repEmail, name:r.repName || (r.repEmail ? r.repEmail.split('@')[0] : 'Unassigned'),
+                   identified:0, called:0, inEditor:0, won:0, calls:0, kw:0, last:null };
+    }
+    var m = map[key];
+    m.identified++;
+    m.calls += r.callCount;
+    if (r.called) m.called++;
+    if (r.inEditor) m.inEditor++;
+    if (r.won){ m.won++; m.kw += r.contractedKw || r.capacityKw; }
+    if (r.updatedAt && (!m.last || r.updatedAt > m.last)) m.last = r.updatedAt;
+  });
+
+  var reps = Object.keys(map).map(function(k){ return map[k]; });
+  reps.sort(function(a,b){ return (b.won - a.won) || (b.called - a.called) || (b.identified - a.identified); });
+
+  var named = reps.filter(function(r){ return r.email; }).length;
+  document.getElementById('rep-count').textContent = fmtN(named);
+
+  var body = document.getElementById('rep-body');
+  if (!reps.length){
+    body.innerHTML = '<tr><td colspan="9"><div class="empty"><b>No reps assigned yet</b>' +
+      'Sites get a rep when someone claims them on the ComEd Capacity map.</div></td></tr>';
+    return;
+  }
+
+  body.innerHTML = reps.map(function(m){
+    var callRate = pct(m.called, m.identified);
+    var winRate = pct(m.won, m.called);
+    return '<tr>' +
+      '<td><div class="rep">' +
+        '<div class="rep-av">' + esc(initials(m.name)) + '</div>' +
+        '<div><div class="rep-nm">' + esc(m.name) + '</div>' +
+        (m.email ? '<div class="rep-em">' + esc(m.email) + '</div>' : '<div class="rep-em">no owner</div>') +
+        '</div></div></td>' +
+      '<td class="num">' + fmtN(m.identified) + '</td>' +
+      '<td class="num">' + fmtN(m.called) + '</td>' +
+      '<td class="num">' + fmtN(m.inEditor) + '</td>' +
+      '<td class="num">' + fmtN(m.won) + '</td>' +
+      '<td><div class="bar"><i style="width:' + callRate + '%;background:#0EA5E9"></i></div><div class="pct">' + callRate + '%</div></td>' +
+      '<td><div class="bar"><i style="width:' + winRate + '%"></i></div><div class="pct">' + winRate + '%</div></td>' +
+      '<td class="num">' + fmtN(Math.round(m.kw)) + '</td>' +
+      '<td>' + esc(ago(m.last)) + '</td>' +
+    '</tr>';
+  }).join('');
+}
+
+function renderSites(rows){
+  var top = rows.slice().sort(function(a,b){ return b.capacityKw - a.capacityKw; }).slice(0, 8);
+  var body = document.getElementById('site-body');
+  if (!top.length){
+    body.innerHTML = '<tr><td colspan="5"><div class="empty"><b>No sites yet</b>' +
+      'Open the <a href="/comed-capacity.html">ComEd Capacity map</a> to identify your first site.</div></td></tr>';
+    return;
+  }
+  body.innerHTML = top.map(function(r){
+    var link = r.projectId
+      ? '<a href="/editor.html?id=' + encodeURIComponent(r.projectId) + '" style="color:var(--sap-blue);font-weight:600;text-decoration:none">' + esc(r.siteName) + '</a>'
+      : esc(r.siteName);
+    return '<tr>' +
+      '<td>' + link + (r.address ? '<div class="rep-em">' + esc(r.address) + '</div>' : '') + '</td>' +
+      '<td>' + esc(r.feeder) + '</td>' +
+      '<td class="num">' + fmtN(Math.round(r.capacityKw)) + ' kW</td>' +
+      '<td>' + esc(r.repName || (r.repEmail ? r.repEmail.split('@')[0] : '—')) + '</td>' +
+      '<td><span class="pill ' + esc(r.status) + '">' + esc(STAGE_LABEL[r.status] || r.status) + '</span></td>' +
+    '</tr>';
+  }).join('');
+}
+
+function renderFeed(rows){
+  var recent = rows.filter(function(r){ return r.updatedAt; })
+                   .sort(function(a,b){ return b.updatedAt - a.updatedAt; })
+                   .slice(0, 7);
+  var feed = document.getElementById('feed');
+  if (!recent.length){
+    feed.innerHTML = '<div class="empty"><b>Nothing logged yet</b>Rep activity shows up here as sites move through the pipeline.</div>';
+    return;
+  }
+  feed.innerHTML = recent.map(function(r){
+    var who = r.repName || (r.repEmail ? r.repEmail.split('@')[0] : 'Unassigned');
+    var what = r.won ? 'closed the sale'
+             : r.lost ? 'marked it lost'
+             : r.inEditor ? 'built the site map'
+             : r.called ? 'logged a call'
+             : 'identified the site';
+    var color = r.won ? '#1DB954' : r.lost ? '#E53935' : r.inEditor ? '#14B8A6' : '#0070F2';
+    return '<div class="feed-item">' +
+      '<div class="feed-dot" style="background:' + color + '"></div>' +
+      '<div class="feed-main">' +
+        '<div class="feed-title">' + esc(r.siteName) + '</div>' +
+        '<div class="feed-meta">' + esc(who) + ' ' + esc(what) +
+          (r.capacityKw ? ' · ' + fmtN(Math.round(r.capacityKw)) + ' kW' : '') + '</div>' +
+      '</div>' +
+      '<div class="feed-when">' + esc(ago(r.updatedAt)) + '</div>' +
+    '</div>';
+  }).join('');
+}
 </script>
 </body>
 </html>

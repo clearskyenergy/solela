@@ -1,0 +1,2202 @@
+<!DOCTYPE html>
+<!--
+  ═══════════════════════════════════════════════════════════════════════════════
+  ClearSky-OMEGA · Solela LLC / Chileasing Energy Workspace
+  SITE ORIGINATION PORTAL  —  simplified build
+
+  Scope of this tenant (deliberately narrow):
+    • ComEd Capacity Map   (/comed-capacity.html)  — identify sites
+    • Projects             (/projects.html)        — sites taken forward
+    • BESS Site Map editor (/editor.html)          — opened from a project
+  No marketplace, no finance tools, no partner roll-up.
+
+  © 2026 ClearSky Energy Solutions LLC. All rights reserved.
+  Proprietary and Confidential. Author: Tommy Gilmer.
+  ═══════════════════════════════════════════════════════════════════════════════
+-->
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="author" content="Tommy Gilmer · ClearSky Energy Solutions LLC">
+<meta name="copyright" content="© 2026 ClearSky Energy Solutions LLC. Proprietary.">
+<title>Solela LLC · Site Origination Portal</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --cs-navy:#08384F;--cs-dark:#052A3D;--cs-blue:#006F9A;--cs-sky:#00A9A4;
+  --cs-accent:#00A9A4;--cs-gold:#00C4BC;--cs-text:#0F2733;--cs-sub:#5A7180;
+  --cs-bg:#F4F1EC;--cs-surface:#FAFAF8;--cs-border:#DDD8D0;
+  --cs-green:#1DB954;--cs-red:#E53935;
+
+  /* ── SAP Business Network reskin ── */
+  --sap-blue:#0070F2;      /* primary action / link blue           */
+  --sap-blue-hi:#1B90FF;   /* active underline / hover             */
+  --sap-ink:#1D2D3E;       /* dark nav/link text                   */
+  --sap-ink-2:#556B82;     /* muted labels                         */
+  --sap-bar:#FFFFFF;       /* top bar background                   */
+  --sap-bar-border:#E5E9ED;
+  --sap-page:#EDEFF1;      /* page background (cool light gray)    */
+  --sap-card:#FFFFFF;
+  --sap-card-border:#E4E8EC;
+  --sap-num:#223548;       /* big overview numbers (near-black)    */
+}
+/* Repoint the app chrome onto SAP tokens without touching component markup */
+body{--cs-bg:var(--sap-page);--cs-border:var(--sap-card-border)}
+body{font-family:'DM Sans',sans-serif;background:var(--cs-bg);color:var(--cs-text);min-height:100vh}
+
+/* ── AUTH SCREEN (unchanged) ── */
+#auth-screen{
+  display:flex;align-items:center;justify-content:center;min-height:100vh;
+  background:linear-gradient(135deg,#0B1E35 0%,#1B4F8A 50%,#0D2440 100%);
+  position:relative;overflow:hidden;
+}
+#auth-screen::before{
+  content:'';position:absolute;inset:0;
+  background:radial-gradient(ellipse 800px 600px at 60% 40%, rgba(201,168,76,.12) 0%, transparent 70%);
+  pointer-events:none;
+}
+.auth-card{
+  background:rgba(255,255,255,.96);border-radius:20px;padding:52px 48px;
+  width:420px;max-width:92vw;text-align:center;
+  box-shadow:0 40px 80px rgba(0,0,0,.3),0 0 0 1px rgba(255,255,255,.2);
+  position:relative;
+}
+.auth-logo{margin-bottom:22px}
+.auth-logo svg{height:56px;width:auto}
+.auth-omega{height:74px;width:auto;display:block;margin:0 auto}
+.auth-mark{width:64px;height:64px;margin:0 auto;border-radius:16px;display:flex;align-items:center;justify-content:center;
+  background:linear-gradient(135deg,var(--cs-navy),var(--cs-blue));color:#fff;font-size:34px;font-weight:700;line-height:1;
+  box-shadow:0 8px 20px rgba(8,56,79,.28)}
+.auth-company{font-size:22px;font-weight:700;color:var(--cs-navy);letter-spacing:-.3px;margin-top:10px}
+.auth-sub{font-size:13px;color:var(--cs-sub);margin-top:4px;margin-bottom:32px}
+.auth-divider{height:1px;background:var(--cs-border);margin:20px 0;position:relative}
+.auth-divider span{position:absolute;top:-8px;left:50%;transform:translateX(-50%);background:#fff;padding:0 10px;font-size:11px;color:var(--cs-sub);font-weight:500}
+.btn-google{
+  width:100%;padding:13px 20px;border:1.5px solid var(--cs-border);border-radius:10px;
+  background:#fff;cursor:pointer;font-size:14px;font-weight:600;color:var(--cs-text);
+  display:flex;align-items:center;justify-content:center;gap:10px;font-family:'DM Sans',sans-serif;
+  transition:all .15s;
+}
+.btn-google:hover{border-color:var(--cs-sky);background:#F8FBFF;box-shadow:0 4px 12px rgba(46,134,193,.15)}
+/* ── EMAIL / PASSWORD AUTH ── */
+.auth-fields{display:flex;flex-direction:column;gap:10px;margin-bottom:14px;text-align:left}
+.auth-field label{display:block;font-size:11px;font-weight:600;color:var(--cs-sub);text-transform:uppercase;letter-spacing:.4px;margin-bottom:5px}
+.auth-field input{width:100%;padding:12px 14px;border:1.5px solid var(--cs-border);border-radius:10px;font-size:14px;font-family:'DM Sans',sans-serif;color:var(--cs-text);background:#fff;outline:none;transition:border-color .15s}
+.auth-field input:focus{border-color:var(--cs-sky)}
+.btn-email{width:100%;padding:13px 20px;border:none;border-radius:10px;background:var(--cs-navy);color:#fff;cursor:pointer;font-size:14px;font-weight:600;font-family:'DM Sans',sans-serif;transition:background .15s}
+.btn-email:hover{background:var(--cs-blue)}
+.btn-email:disabled{opacity:.6;cursor:default}
+.auth-toggle{margin-top:14px;font-size:12.5px;color:var(--cs-sub)}
+.auth-forgot{margin-top:10px;font-size:12px;text-align:center}
+.auth-forgot a{color:var(--cs-sky);font-weight:600;cursor:pointer;text-decoration:none}
+.auth-forgot a:hover{text-decoration:underline}
+.auth-toggle a{color:var(--cs-sky);font-weight:600;cursor:pointer;text-decoration:none}
+.auth-toggle a:hover{text-decoration:underline}
+.auth-note{font-size:11px;color:var(--cs-sub);margin-top:16px;line-height:1.5}
+.auth-note strong{color:var(--cs-accent)}
+#auth-err{display:none;margin-top:14px;padding:10px 14px;background:rgba(229,57,53,.08);border:1px solid rgba(229,57,53,.2);border-radius:8px;font-size:12px;color:var(--cs-red);font-weight:500}
+#auth-ok{display:none;margin-top:14px;padding:10px 14px;background:rgba(29,185,84,.08);border:1px solid rgba(29,185,84,.25);border-radius:8px;font-size:12px;color:#137A38;font-weight:500}
+
+/* ── TOPBAR (SAP Business Network light chrome) ── */
+#topbar{
+  height:56px;background:var(--sap-bar);display:flex;align-items:center;
+  padding:0 24px;gap:14px;position:sticky;top:0;z-index:200;
+  border-bottom:1px solid var(--sap-bar-border);
+  box-shadow:0 1px 2px rgba(20,40,60,.04);
+}
+.tb-logo{display:flex;align-items:center;gap:10px;text-decoration:none}
+.tb-logo svg{height:30px}
+/* white omega mark reads on dark only — swap to a blue SAP-style tile */
+.tb-omega{height:22px;width:auto;display:block;background:var(--sap-blue);border-radius:5px;padding:5px 7px}
+.tb-logo-txt{color:var(--sap-ink);font-weight:700;font-size:15px;letter-spacing:-.2px}
+.tb-logo-txt span{color:var(--sap-blue)}
+.tb-sep{width:1px;height:22px;background:var(--sap-bar-border)}
+.tb-portal{color:var(--sap-ink-2);font-size:12px;font-weight:600;letter-spacing:.3px;text-transform:uppercase}
+/* ── CLIENT CHIP + ENTERPRISE BADGE in topbar ── */
+.tb-client{display:flex;align-items:center;gap:9px;margin-left:4px}
+.tb-client-chip{background:#fff;border:1px solid var(--sap-bar-border);border-radius:7px;padding:4px 8px;display:flex;align-items:center;height:32px}
+.tb-client-chip img{height:22px;width:auto;display:block}
+.tb-client-txt{font-size:13px;font-weight:700;color:var(--cs-navy);letter-spacing:-.2px;white-space:nowrap}
+.tb-ent-badge{font-size:11px;font-weight:500;letter-spacing:.01em;color:var(--sap-ink-2);background:transparent;border:none;padding:0;border-radius:0;white-space:nowrap}
+.tb-spacer{flex:1}
+/* nav tabs → SAP style: text links with a blue underline on the active tab */
+.tb-nav{display:flex;align-items:center;gap:2px;margin-left:20px;height:56px}
+.tb-tab{display:flex;align-items:center;gap:6px;text-decoration:none;background:transparent;border:none;border-bottom:3px solid transparent;color:var(--sap-ink);border-radius:0;padding:0 14px;height:56px;cursor:pointer;font:500 13.5px/1 'DM Sans',sans-serif;white-space:nowrap;transition:color .12s,border-color .12s}
+.tb-tab svg{width:15px;height:15px;flex:none;opacity:.7}
+.tb-tab:hover{color:var(--sap-blue)}
+.tb-tab.active{color:var(--sap-blue);border-bottom-color:var(--sap-blue-hi);font-weight:600}
+.tb-tab.active svg{opacity:1}
+.tb-user{display:flex;align-items:center;gap:10px}
+.tb-avatar{width:32px;height:32px;border-radius:50%;object-fit:cover;border:2px solid var(--sap-bar-border)}
+.tb-avatar-fallback{width:32px;height:32px;border-radius:50%;background:var(--sap-blue);color:#fff;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700}
+.tb-name{color:var(--sap-ink);font-size:13px;font-weight:500}
+.btn-signout{background:#fff;border:1px solid var(--sap-bar-border);color:var(--sap-ink-2);border-radius:6px;padding:6px 13px;cursor:pointer;font-size:12px;font-weight:500;font-family:'DM Sans',sans-serif;transition:all .12s}
+.btn-signout:hover{border-color:var(--sap-blue);color:var(--sap-blue)}
+
+/* ── MAIN CONTENT (widened for dashboard) ── */
+#main{max-width:1200px;margin:0 auto;padding:40px 24px 64px}
+
+.dash-label{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1.5px;color:var(--sap-blue)}
+.dash-welcome{font-size:32px;font-weight:700;color:var(--sap-ink);margin-top:6px;letter-spacing:-.4px;line-height:1.1}
+.dash-sub{font-size:15px;color:var(--sap-ink-2);margin-top:8px;max-width:760px;line-height:1.5}
+.dash-positioning{font-size:12.5px;color:var(--sap-ink-2);margin-top:14px;max-width:820px;line-height:1.6;padding-left:14px;border-left:3px solid var(--sap-blue)}
+
+/* Hero banner strip — image with a light overlay so it stays airy, not dark */
+.dash-banner{position:relative;margin-top:18px;border-radius:16px;overflow:hidden;height:150px;
+  background:linear-gradient(120deg,#08384F 0%,#006F9A 48%,#00A9A4 100%)}
+.dash-banner::before{content:'';position:absolute;inset:0;pointer-events:none;
+  background:radial-gradient(ellipse 720px 420px at 84% 24%, rgba(0,196,188,.38) 0%, transparent 62%),
+             radial-gradient(circle 220px at 92% 82%, rgba(255,255,255,.10) 0%, transparent 70%)}
+.dash-banner::after{content:'';position:absolute;right:-30px;top:-46px;width:250px;height:250px;
+  border:32px solid rgba(255,255,255,.06);border-radius:50%;pointer-events:none}
+.dash-banner-txt{position:absolute;z-index:1;left:26px;top:50%;transform:translateY(-50%);max-width:60%}
+.dash-banner-txt h2{font-size:20px;font-weight:800;color:#fff;letter-spacing:-.3px;line-height:1.15}
+.dash-banner-txt p{font-size:12.5px;color:rgba(255,255,255,.88);margin-top:5px;font-weight:600}
+@media (max-width:640px){ .dash-banner{height:120px} .dash-banner-txt{max-width:78%} .dash-banner-txt h2{font-size:16px} }
+
+/* ── SECTION HEADINGS ── */
+.block-head{display:flex;align-items:center;justify-content:space-between;margin:34px 0 14px}
+.block-toggle{display:flex;align-items:center;gap:6px;background:#fff;border:1px solid var(--cs-border);border-radius:8px;
+  padding:6px 12px;font:600 12px 'DM Sans',sans-serif;color:var(--cs-sub);cursor:pointer;transition:all .12s}
+.block-toggle:hover{border-color:var(--cs-sky);color:var(--cs-navy)}
+.block-toggle svg{width:13px;height:13px;transition:transform .18s}
+.block-toggle.collapsed svg{transform:rotate(-90deg)}
+.collapsible.hidden{display:none}
+.block-title{font-size:17px;font-weight:700;color:var(--sap-ink)}
+.block-title .cnt{background:var(--sap-blue);color:#fff;border-radius:12px;padding:2px 9px;font-size:11px;font-weight:700;margin-left:8px}
+.block-sub{font-size:12px;color:var(--sap-ink-2);margin-top:2px}
+
+/* ── SAP OVERVIEW STRIP (primary metrics in one white card) ── */
+.ov-strip{background:var(--sap-card);border:1px solid var(--sap-card-border);border-radius:14px;
+  padding:26px 8px;box-shadow:0 1px 3px rgba(20,40,60,.06);display:flex;align-items:stretch}
+.ov-cell{flex:1;padding:2px 20px;text-align:center;position:relative;display:flex;flex-direction:column;align-items:center;justify-content:flex-start}
+.ov-cell + .ov-cell::before{content:'';position:absolute;left:0;top:4px;bottom:4px;width:1px;
+  background:repeating-linear-gradient(to bottom,var(--sap-card-border) 0 4px,transparent 4px 8px)}
+.ov-val{font-size:40px;font-weight:400;color:var(--sap-num);line-height:1;letter-spacing:-1px}
+.ov-val .unit{font-size:15px;font-weight:600;color:var(--sap-ink-2);margin-left:3px;letter-spacing:0}
+.ov-val .pre{font-size:16px;font-weight:600;color:var(--sap-ink-2);vertical-align:top;margin-right:1px}
+.ov-label{font-size:13px;font-weight:400;color:var(--sap-ink);margin-top:12px;line-height:1.3}
+.ov-foot{font-size:11px;color:var(--sap-ink-2);margin-top:6px}
+
+/* ── KPI GRID (secondary metrics, SAP flat cards) ── */
+.kpi-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:12px}
+.kpi{background:var(--sap-card);border:1px solid var(--sap-card-border);border-radius:12px;padding:16px 18px;box-shadow:0 1px 3px rgba(20,40,60,.05);position:relative;overflow:hidden}
+.kpi::before{content:'';position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--sap-blue);opacity:.6}
+.kpi.blue::before{background:var(--sap-blue-hi)}
+.kpi.green::before{background:var(--cs-green)}
+.kpi-label{font-size:11px;font-weight:600;color:var(--sap-ink-2);text-transform:uppercase;letter-spacing:.4px;line-height:1.3;min-height:28px}
+.kpi-val{font-size:26px;font-weight:700;color:var(--sap-num);letter-spacing:-.5px;margin-top:6px;font-family:'DM Sans',sans-serif}
+.kpi-val .unit{font-size:14px;font-weight:600;color:var(--sap-ink-2);margin-left:3px}
+.kpi-foot{font-size:10.5px;color:var(--sap-ink-2);margin-top:6px}
+
+/* ── PIPELINE STAGE BAR (signature element) ── */
+.pipeline{background:#fff;border:1px solid var(--cs-border);border-radius:14px;padding:24px;box-shadow:0 2px 12px rgba(0,0,0,.05)}
+.pipe-track{display:grid;grid-template-columns:repeat(8,1fr);gap:8px;position:relative}
+.pipe-stage{position:relative;padding-top:22px;text-align:center}
+.pipe-stage::before{content:'';position:absolute;top:6px;left:calc(-50% + 7px);right:calc(50% + 7px);height:2px;background:var(--cs-border)}
+.pipe-stage:first-child::before{display:none}
+.pipe-dot{position:absolute;top:0;left:50%;transform:translateX(-50%);width:14px;height:14px;border-radius:50%;background:#fff;border:2px solid var(--cs-border);z-index:2}
+.pipe-stage.filled .pipe-dot{background:var(--sap-blue);border-color:var(--sap-blue)}
+.pipe-stage.submitted .pipe-dot{background:var(--sap-blue-hi);border-color:var(--sap-blue-hi);box-shadow:0 0 0 4px rgba(27,144,255,.18)}
+.pipe-stage.online .pipe-dot{background:var(--cs-green);border-color:var(--cs-green);box-shadow:0 0 0 4px rgba(29,185,84,.15)}
+.pipe-num{font-size:22px;font-weight:700;color:var(--sap-num);line-height:1}
+.pipe-name{font-size:10px;color:var(--cs-sub);margin-top:5px;line-height:1.3;font-weight:500}
+
+/* ── SAP "MY WIDGETS" ROW ── */
+.widgets-head{display:flex;align-items:center;gap:14px;margin:34px 0 14px}
+.widgets-head .block-title{font-size:22px}
+.wg-row{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;align-items:stretch}
+.wg-card{background:var(--sap-card);border:1px solid var(--sap-card-border);border-radius:14px;
+  box-shadow:0 1px 3px rgba(20,40,60,.06);display:flex;flex-direction:column;overflow:hidden;min-height:320px}
+.wg-cardhead{display:flex;align-items:center;justify-content:space-between;padding:16px 18px 12px}
+.wg-title{font-size:14px;font-weight:600;color:var(--sap-ink)}
+.wg-period{display:flex;align-items:center;gap:5px;font-size:12.5px;font-weight:600;color:var(--sap-blue);cursor:pointer}
+.wg-period svg{width:13px;height:13px}
+.wg-viewall{font-size:12.5px;font-weight:600;color:var(--sap-blue);cursor:pointer;text-decoration:none}
+.wg-viewall:hover{text-decoration:underline}
+.wg-body{flex:1;padding:0 18px 18px;display:flex;flex-direction:column}
+.wg-hero{font-size:44px;font-weight:700;line-height:1;letter-spacing:-1.5px;margin-top:2px}
+.wg-hero .unit{font-size:16px;font-weight:600;color:var(--sap-ink-2);margin-left:3px;letter-spacing:0;vertical-align:top}
+.wg-hero.green{color:#2E9C3C}.wg-hero.blue{color:var(--sap-blue)}.wg-hero.ink{color:var(--sap-num)}
+
+/* donut */
+.wg-donut-wrap{position:relative;display:flex;align-items:center;justify-content:center;flex:1;padding:8px 0;height:190px}
+.wg-donut-wrap canvas{max-height:190px}
+.wg-legend{display:flex;flex-wrap:wrap;gap:6px 16px;padding-top:6px;justify-content:center}
+.wg-leg{display:flex;align-items:center;gap:6px;font-size:11.5px;color:var(--sap-ink-2)}
+.wg-leg .dot{width:9px;height:9px;border-radius:2px;flex:none}
+
+/* line/area chart */
+.wg-chart{position:relative;flex:1;min-height:160px;height:160px}
+.wg-chart canvas{max-height:160px}
+
+/* activity feed */
+.wg-feed{flex:1;display:flex;flex-direction:column;gap:0;overflow-y:auto;max-height:270px;margin:0 -18px;padding:0}
+.wg-feeditem{display:flex;align-items:center;gap:12px;padding:12px 18px;border-top:1px solid #F0F2F4}
+.wg-feeditem:first-child{border-top:none}
+.wg-feedicon{width:38px;height:38px;border-radius:50%;background:#F2F4F6;display:flex;align-items:center;justify-content:center;color:var(--sap-ink-2);flex:none}
+.wg-feedicon svg{width:18px;height:18px}
+.wg-feedmain{flex:1;min-width:0}
+.wg-feedtitle{font-size:13px;font-weight:600;color:var(--sap-blue);line-height:1.3}
+.wg-feedmeta{font-size:11px;color:var(--sap-ink-2);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.wg-feedsub{font-size:12px;color:var(--sap-ink-2);margin-top:2px}
+.wg-feedamt{font-size:12.5px;font-weight:600;color:var(--sap-ink);white-space:nowrap;text-align:right;flex:none}
+.wg-feed-empty{padding:40px 18px;text-align:center;color:var(--sap-ink-2);font-size:12.5px}
+
+/* ── TWO-COLUMN: TABLE + NEXT ACTIONS ── */
+.dash-cols{display:grid;grid-template-columns:1fr 320px;gap:20px;align-items:start}
+
+/* ── PORTFOLIO TABLE ── */
+.table-wrap{background:#fff;border:1px solid var(--cs-border);border-radius:14px;overflow:hidden;box-shadow:0 2px 12px rgba(0,0,0,.05)}
+.ptable{width:100%;border-collapse:collapse;font-size:12.5px}
+.ptable thead th{background:#F5F7F9;color:var(--sap-ink-2);text-align:left;padding:12px 14px;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.3px;white-space:nowrap;border-bottom:1px solid var(--sap-card-border)}
+.ptable tbody td{padding:12px 14px;border-bottom:1px solid var(--sap-card-border);color:var(--cs-text);vertical-align:middle}
+.ptable tbody tr:last-child td{border-bottom:none}
+.ptable tbody tr:hover{background:#F5F9FF;cursor:pointer}
+.ptable .site-nm{font-weight:600;color:var(--sap-blue)}
+.ptable .num{font-family:'DM Mono',monospace;font-size:12px;white-space:nowrap}
+.pstatus{display:inline-block;font-size:10px;font-weight:600;padding:3px 9px;border-radius:20px;white-space:nowrap}
+.pstatus.candidate{background:rgba(107,122,141,.12);color:#556}
+.pstatus.package{background:rgba(201,168,76,.14);color:#8A6D1F}
+.pstatus.submitted{background:rgba(46,134,193,.12);color:#1B5E88}
+.pstatus.interconnect{background:rgba(46,134,193,.12);color:#1B5E88}
+.pstatus.permitting{background:rgba(124,58,237,.12);color:#5B21B6}
+.pstatus.finance{background:rgba(217,119,6,.12);color:#9A5B00}
+.pstatus.construction{background:rgba(217,119,6,.14);color:#8A4B00}
+.pstatus.online{background:rgba(29,185,84,.14);color:#137A38}
+.pnext{font-size:11px;color:var(--cs-sub)}
+.table-foot{padding:12px 14px;font-size:11px;color:var(--cs-sub);background:var(--cs-surface);border-top:1px solid var(--cs-border)}
+.table-foot a{color:var(--sap-blue);text-decoration:none;font-weight:600}
+
+/* ── NEXT ACTIONS PANEL ── */
+.actions-panel{background:#fff;border:1px solid var(--cs-border);border-radius:14px;padding:20px;box-shadow:0 2px 12px rgba(0,0,0,.05)}
+.ap-head{font-size:14px;font-weight:700;color:var(--cs-navy);margin-bottom:4px}
+.ap-sub{font-size:11px;color:var(--cs-sub);margin-bottom:16px}
+.ap-item{display:flex;gap:11px;padding:11px 0;border-bottom:1px solid var(--cs-border);align-items:flex-start}
+.ap-item:last-child{border-bottom:none}
+.ap-check{width:16px;height:16px;border:2px solid var(--cs-border);border-radius:5px;flex-shrink:0;margin-top:1px}
+.ap-item.pri .ap-check{border-color:var(--sap-blue);background:rgba(0,112,242,.1)}
+.ap-txt{font-size:12.5px;color:var(--cs-text);line-height:1.4}
+.ap-meta{font-size:10.5px;color:var(--cs-sub);margin-top:2px}
+
+/* ── ACTION CARDS (Platform Tools — moved lower, unchanged links) ── */
+.action-cards{background:#fff;border:1px solid var(--cs-border);border-radius:14px;margin-top:16px;overflow:hidden;box-shadow:0 2px 12px rgba(0,0,0,.06)}
+.action-card{display:flex;align-items:center;padding:20px 24px;gap:18px;cursor:pointer;transition:background .12s;text-decoration:none;color:inherit;border-bottom:1px solid var(--cs-border)}
+.action-card:last-child{border-bottom:none}
+.action-card:hover{background:#F8F9FA}
+.ac-icon{width:44px;height:44px;border-radius:10px;background:rgba(201,168,76,.12);border:1.5px solid rgba(201,168,76,.3);display:flex;align-items:center;justify-content:center;flex-shrink:0}
+.ac-text,.ac-body{flex:1}
+.ac-title{font-size:16px;font-weight:600;color:var(--cs-navy);margin-bottom:3px}
+.ac-desc{font-size:13px;color:var(--cs-sub);line-height:1.45}
+.ac-arrow{color:var(--cs-border);font-size:18px}
+.action-card:hover .ac-arrow{color:var(--cs-sky)}
+
+/* ── QUICK LINKS ROW (portal / site map / compute / how-it-works) ── */
+.quick-row{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-top:16px}
+.quick-link{background:#fff;border:1px solid var(--cs-border);border-radius:12px;padding:16px 18px;text-decoration:none;color:inherit;display:flex;flex-direction:column;gap:8px;transition:all .15s;box-shadow:0 2px 8px rgba(0,0,0,.04)}
+.quick-link:hover{border-color:var(--sap-blue);box-shadow:0 4px 14px rgba(0,112,242,.12);transform:translateY(-1px)}
+.ql-icon{width:34px;height:34px;border-radius:8px;background:rgba(0,112,242,.1);display:flex;align-items:center;justify-content:center;color:var(--sap-blue)}
+.ql-title{font-size:13.5px;font-weight:600;color:var(--cs-navy)}
+.ql-desc{font-size:11px;color:var(--cs-sub);line-height:1.4}
+
+/* Secondary links (My Projects — unchanged) */
+.sec-links{margin-top:8px}
+.sec-link{display:flex;align-items:center;padding:16px 24px;gap:16px;cursor:pointer;transition:background .12s;text-decoration:none;color:inherit;background:#fff;border:1px solid var(--cs-border);border-radius:12px}
+.sec-link:hover{background:rgba(0,0,0,.02)}
+.sl-icon{width:36px;height:36px;border-radius:8px;background:rgba(0,0,0,.04);display:flex;align-items:center;justify-content:center;flex-shrink:0}
+.sl-text{flex:1}
+.sl-title{font-size:14px;font-weight:600;color:var(--cs-text)}
+.sl-desc{font-size:12px;color:var(--cs-sub);margin-top:1px}
+
+/* Recent projects (unchanged) */
+.sec-head{display:flex;align-items:center;justify-content:space-between;margin-top:38px;margin-bottom:16px}
+.sec-title{font-size:18px;font-weight:700;color:var(--cs-navy)}
+.sec-count{background:var(--cs-accent);color:var(--cs-navy);border-radius:12px;padding:2px 8px;font-size:11px;font-weight:700;margin-left:8px}
+.view-all{font-size:12px;font-weight:600;color:var(--sap-blue);text-decoration:none;cursor:pointer}
+.view-all:hover{text-decoration:underline}
+.proj-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:12px}
+.proj-card{background:#fff;border:1px solid var(--cs-border);border-radius:12px;padding:18px;cursor:pointer;transition:all .15s;text-decoration:none;color:inherit;display:block}
+.proj-card:hover{border-color:var(--cs-sky);box-shadow:0 4px 16px rgba(46,134,193,.12);transform:translateY(-1px)}
+.pc-name{font-size:14px;font-weight:600;color:var(--cs-navy);margin-bottom:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pc-addr{font-size:11px;color:var(--cs-sub);margin-bottom:10px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pc-meta{display:flex;gap:6px;flex-wrap:wrap}
+.pc-tag{font-size:10px;font-weight:600;padding:2px 7px;border-radius:10px;background:rgba(27,79,138,.08);color:var(--cs-blue)}
+.pc-date{font-size:10px;color:var(--cs-sub);margin-top:8px}
+.proj-empty{text-align:center;padding:40px;color:var(--cs-sub);background:#fff;border:1px solid var(--cs-border);border-radius:12px}
+.proj-empty svg{opacity:.3;margin-bottom:10px}
+.proj-empty p{font-size:13px}
+
+/* Loading */
+.loading{display:flex;align-items:center;justify-content:center;padding:40px;gap:10px;color:var(--cs-sub);font-size:13px}
+.spin{width:18px;height:18px;border:2px solid var(--cs-border);border-top-color:var(--cs-sky);border-radius:50%;animation:spin .7s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+/* New project modal (unchanged) */
+.modal-bg{position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:500;display:none;align-items:center;justify-content:center;backdrop-filter:blur(4px)}
+.modal-bg.on{display:flex}
+.modal{background:#fff;border-radius:16px;padding:30px;width:460px;max-width:94vw;max-height:85vh;overflow-y:auto;box-shadow:0 24px 60px rgba(0,0,0,.2)}
+.modal h3{font-size:20px;font-weight:700;color:var(--cs-navy);margin-bottom:20px}
+.mrow{margin-bottom:14px}
+.mrow label{display:block;font-size:11px;color:var(--cs-sub);margin-bottom:4px;font-weight:600;text-transform:uppercase;letter-spacing:.5px}
+.mrow input,.mrow select{width:100%;border:1.5px solid var(--cs-border);border-radius:8px;padding:9px 12px;font-size:13px;font-family:'DM Sans',sans-serif;color:var(--cs-text);background:#fff;outline:none;transition:border-color .12s}
+.mrow input:focus,.mrow select:focus{border-color:var(--cs-sky)}
+.mbtns{display:flex;gap:8px;justify-content:flex-end;margin-top:20px}
+.mb-cancel{background:#F4F1EC;border:1px solid var(--cs-border);color:var(--cs-sub);border-radius:8px;padding:9px 18px;cursor:pointer;font-size:13px;font-weight:600;font-family:'DM Sans',sans-serif}
+.mb-create{background:var(--cs-navy);color:#fff;border:none;border-radius:8px;padding:9px 22px;cursor:pointer;font-size:13px;font-weight:600;font-family:'DM Sans',sans-serif;transition:background .12s}
+.mb-create:hover{background:var(--cs-blue)}
+
+#app{display:none}
+
+/* ── RESPONSIVE ── */
+@media(max-width:1024px){
+  .kpi-grid{grid-template-columns:repeat(3,1fr)}
+  .dash-cols{grid-template-columns:1fr}
+  .quick-row{grid-template-columns:repeat(2,1fr)}
+  .pipe-track{grid-template-columns:repeat(4,1fr);gap:16px}
+  .pipe-stage::before{display:none}
+  .ov-strip{flex-wrap:wrap;gap:20px 0}
+  .ov-cell{flex:0 0 33.333%}
+  .ov-cell::before{display:none}
+  .ov-val{font-size:34px}
+  .wg-row{grid-template-columns:1fr}
+}
+@media(max-width:640px){
+  #main{padding:28px 16px 48px}
+  .dash-welcome{font-size:26px}
+  .kpi-grid{grid-template-columns:repeat(2,1fr)}
+  .quick-row{grid-template-columns:1fr}
+  .pipe-track{grid-template-columns:repeat(2,1fr)}
+  .table-wrap{overflow-x:auto}
+  .ptable{min-width:760px}
+  .ov-cell{flex:0 0 50%}
+  .ov-val{font-size:30px}
+}
+
+/* ── UPGRADE OVERLAY (locked tools) ── */
+.pm-tile.locked{ position:relative; cursor:pointer; }
+.pm-tile.locked > *:not(.pm-lock){ filter:grayscale(.85) opacity(.45); pointer-events:none; }
+.pm-lock{
+  position:absolute; inset:0; display:flex; flex-direction:column;
+  align-items:center; justify-content:center; gap:6px;
+  background:linear-gradient(135deg, rgba(8,56,79,.90), rgba(0,111,154,.88));
+  border-radius:inherit; opacity:0; transition:opacity .16s; z-index:3;
+}
+.pm-tile.locked:hover .pm-lock{ opacity:1; }
+.pm-lock-badge{
+  position:absolute; top:8px; right:8px; z-index:4;
+  background:var(--cs-accent); color:#04303a; font-size:9px; font-weight:800;
+  letter-spacing:.5px; text-transform:uppercase; padding:3px 8px; border-radius:10px;
+  box-shadow:0 2px 6px rgba(0,169,164,.4);
+}
+.pm-lock svg{ stroke:#fff; }
+.pm-lock-txt{ color:#fff; font-weight:700; font-size:13px; }
+.pm-lock-sub{ color:rgba(255,255,255,.8); font-size:10px; text-align:center; padding:0 14px; line-height:1.4; }
+.pm-lock-cta{
+  margin-top:4px; background:var(--cs-accent); color:#04303a; font-weight:700;
+  font-size:10.5px; padding:5px 14px; border-radius:8px; border:none; cursor:pointer;
+}
+
+/* ══ ACCOUNT SETTINGS MODAL ══ */
+.acct-overlay{position:fixed;inset:0;background:rgba(8,25,40,.55);z-index:200;display:none;align-items:center;justify-content:center;padding:20px}
+.acct-overlay.show{display:flex}
+.acct-modal{background:#fff;border-radius:18px;width:440px;max-width:94vw;max-height:90vh;overflow-y:auto;box-shadow:0 30px 70px rgba(0,0,0,.3)}
+.acct-head{padding:22px 24px 16px;border-bottom:1px solid var(--cs-border);display:flex;align-items:center;justify-content:space-between}
+.acct-head h3{font-size:18px;font-weight:800;color:var(--cs-navy)}
+.acct-close{background:none;border:none;font-size:22px;line-height:1;color:var(--cs-sub);cursor:pointer}
+.acct-close:hover{color:var(--cs-navy)}
+.acct-body{padding:20px 24px 24px}
+.acct-row{display:flex;justify-content:space-between;padding:9px 0;border-bottom:1px solid rgba(221,216,208,.5);font-size:13px}
+.acct-row .k{color:var(--cs-sub)}
+.acct-row .v{color:var(--cs-text);font-weight:600}
+.acct-sec-title{font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--cs-sub);margin:20px 0 10px}
+.acct-field{margin-bottom:12px}
+.acct-field label{display:block;font-size:11px;font-weight:600;color:var(--cs-sub);text-transform:uppercase;letter-spacing:.4px;margin-bottom:5px}
+.acct-field input{width:100%;padding:11px 13px;border:1.5px solid var(--cs-border);border-radius:10px;font:400 14px 'DM Sans',sans-serif;color:var(--cs-text);background:#fff;outline:none;transition:border-color .15s}
+.acct-field input:focus{border-color:var(--cs-sky)}
+.acct-btn{width:100%;padding:12px;border:none;border-radius:10px;background:var(--cs-navy);color:#fff;font:600 14px 'DM Sans',sans-serif;cursor:pointer;transition:background .15s;margin-top:4px}
+.acct-btn:hover{background:var(--cs-blue)}
+.acct-btn:disabled{background:#B8C2C8;cursor:default}
+.acct-msg{font-size:12.5px;margin-top:10px;min-height:16px;line-height:1.4}
+.acct-msg.ok{color:#137A38}
+.acct-msg.err{color:var(--cs-red)}
+.acct-note{font-size:12px;color:var(--cs-sub);line-height:1.5;background:var(--cs-surface);border:1px solid var(--cs-border);border-radius:10px;padding:12px 14px}
+.acct-profile{padding-bottom:6px;border-bottom:1px solid var(--cs-border);margin-bottom:4px}
+.acct-av-wrap{display:flex;align-items:center;gap:16px}
+.acct-av{width:64px;height:64px;border-radius:50%;flex:none;display:flex;align-items:center;justify-content:center;
+  color:#fff;font-weight:700;font-size:24px;overflow:hidden;background:var(--cs-sky)}
+.acct-av img{width:100%;height:100%;object-fit:cover}
+.acct-av-actions{display:flex;flex-direction:column;gap:7px}
+.acct-av-btn{background:var(--cs-navy);color:#fff;border:none;border-radius:8px;padding:8px 14px;font:600 12px 'DM Sans',sans-serif;cursor:pointer}
+.acct-av-btn:hover{background:var(--cs-blue)}
+.acct-av-btn.ghost{background:#fff;border:1.5px solid var(--cs-border);color:var(--cs-sub)}
+.acct-av-btn.ghost:hover{border-color:var(--cs-red);color:var(--cs-red)}
+
+/* ══════════════════════ MOBILE ══════════════════════ */
+html{-webkit-text-size-adjust:100%}
+body{overflow-x:hidden}
+
+/* ── AUTH SCREEN ── */
+@media (max-width:520px){
+  #auth-screen{align-items:flex-start;padding:24px 14px 40px;min-height:100vh;min-height:100dvh;overflow-y:auto}
+  .auth-card{width:100%;max-width:none;padding:34px 22px;border-radius:16px}
+  .auth-logo img{height:44px !important}
+  .auth-company{font-size:19px}
+  .auth-sub{font-size:12.5px;margin-bottom:24px}
+  .auth-field input{font-size:16px;padding:13px 14px}
+  .btn-email,.btn-google{padding:15px 18px;font-size:15px}
+  .auth-note{font-size:10.5px}
+}
+
+/* Drawer-only controls (name + Account/Sign-out) hidden on desktop; shown inside the mobile drawer via the max-width:900px block below. */
+.tb-drawer-who,.tb-drawer-actions{display:none}
+
+/* ── TOPBAR + HAMBURGER ── */
+.tb-burger{display:none;background:#fff;border:1px solid var(--sap-bar-border);border-radius:8px;
+  width:38px;height:38px;align-items:center;justify-content:center;cursor:pointer;flex:none;padding:0}
+.tb-burger svg{width:20px;height:20px;stroke:var(--sap-ink);stroke-width:2;fill:none;stroke-linecap:round}
+.tb-scrim{position:fixed;inset:0;background:rgba(8,25,40,.5);z-index:999;opacity:0;pointer-events:none;
+  transition:opacity .2s}
+.tb-scrim.open{opacity:1;pointer-events:auto}
+
+@media (max-width:900px){
+  #topbar{height:54px;padding:0 12px;gap:8px}
+  .tb-burger{display:flex}
+  .tb-sep,.tb-portal,.tb-ent-badge{display:none}
+  .tb-client{margin-left:0;min-width:0}
+  .tb-client-chip{height:30px;padding:3px 7px;max-width:150px;overflow:hidden}
+  .tb-client-chip img{height:20px}
+  .tb-client-txt{font-size:12px;overflow:hidden;text-overflow:ellipsis}
+  .tb-logo img[alt="SUN Energy Solutions"]{display:none}
+  .tb-name{display:none}
+
+  .tb-nav{position:fixed !important;top:0 !important;right:0;bottom:0;left:auto;
+    width:270px;max-width:82vw;height:100vh;height:100dvh;
+    background:#ffffff !important;background-color:#ffffff !important;
+    flex-direction:column;align-items:stretch;gap:0;margin:0;padding:64px 0 20px;
+    box-shadow:-8px 0 30px rgba(0,0,0,.28);transform:translateX(100%);transition:transform .24s ease;
+    z-index:1000 !important;overflow-y:auto;-webkit-overflow-scrolling:touch;
+    opacity:1 !important;backdrop-filter:none}
+  .tb-nav.open{transform:translateX(0)}
+  .tb-tab{height:auto;padding:15px 22px;border-bottom:1px solid var(--sap-bar-border);
+    border-left:3px solid transparent;font-size:15px;justify-content:flex-start;gap:12px}
+  .tb-tab.active{border-bottom-color:var(--sap-bar-border);border-left-color:var(--sap-blue);
+    background:rgba(0,112,242,.06)}
+  .tb-tab svg{width:18px;height:18px}
+  .tb-nav .tb-drawer-actions{padding:16px 22px;display:flex;flex-direction:column;gap:10px}
+  .tb-nav .tb-drawer-actions button{width:100%;padding:12px;font-size:14px;border-radius:9px}
+  .tb-nav .tb-drawer-who{display:block;padding:0 22px 12px;font-size:12px;color:var(--sap-ink-2);
+    word-break:break-all;border-bottom:1px solid var(--sap-bar-border);margin-bottom:14px}
+  .tb-user .btn-signout{display:none}
+  .tb-spacer{flex:1}
+}
+
+/* ── LAYOUT / CONTENT ── */
+@media (max-width:900px){
+  #main{padding:22px 14px 56px}
+  .dash-welcome{font-size:24px}
+  .dash-sub{font-size:13.5px}
+  .dash-positioning{font-size:12px}
+  .block-head{flex-direction:column;align-items:flex-start;gap:10px;margin:26px 0 12px}
+  .widgets-head .block-title{font-size:19px}
+  .wg-row{grid-template-columns:1fr}
+  .dash-cols{grid-template-columns:1fr}
+  .platform-map{grid-template-columns:1fr;gap:20px}
+  .pm-col.wide .pm-grid{grid-template-columns:repeat(2,1fr)}
+  .quick-row{grid-template-columns:repeat(2,1fr)}
+  .team-grid{grid-template-columns:1fr}
+  .pp-dev-grid{grid-template-columns:1fr}
+  .convo-wrap{flex-direction:column}
+  .convo-list{width:auto;border-right:none;border-bottom:1px solid var(--cs-border);max-height:220px}
+  .convo-thread{max-height:260px}
+  .th-body{max-height:300px}
+}
+
+@media (max-width:600px){
+  #main{padding:18px 12px 48px}
+  .dash-welcome{font-size:21px}
+  .dash-banner{height:112px}
+  .dash-banner-txt{max-width:80%;left:16px}
+  .dash-banner-txt h2{font-size:15px}
+  .dash-banner-txt p{font-size:11px}
+
+  .ov-strip{display:grid;grid-template-columns:1fr 1fr;gap:18px 0;padding:20px 4px}
+  .ov-cell{flex:none;padding:0 10px}
+  .ov-cell::before{display:none !important}
+  .ov-val{font-size:28px}
+  .ov-label{font-size:12px;margin-top:8px}
+
+  .kpi-grid{grid-template-columns:1fr 1fr;gap:10px}
+  .kpi{padding:13px 14px}
+  .kpi-label{font-size:10px;min-height:26px}
+  .kpi-val{font-size:21px}
+
+  .pipeline{padding:16px 12px}
+  .pipe-track{grid-template-columns:1fr 1fr;gap:14px}
+  .pipe-num{font-size:19px}
+
+  .quick-row{grid-template-columns:1fr}
+  .pm-col.wide .pm-grid,.pm-grid{grid-template-columns:1fr}
+
+  .table-wrap{overflow-x:auto;-webkit-overflow-scrolling:touch}
+  .ptable{min-width:820px}
+  .imp-table{min-width:760px}
+
+  .th-compose-row{flex-wrap:wrap}
+  .th-select,.th-date{flex:1 1 100%}
+  .th-send{width:100%}
+  .th-input{font-size:16px}
+
+  .modal,.acct-modal,.convo-modal{width:100% !important;max-width:100%;border-radius:16px 16px 0 0;
+    max-height:92vh;max-height:92dvh;padding:22px 18px}
+  .modal-bg,.acct-overlay,.convo-modal-overlay{align-items:flex-end;padding:0}
+  .mrow input,.mrow select,.acct-field input,.modal textarea{font-size:16px}
+  .mrow[style*="flex"]{flex-direction:column !important;gap:0 !important}
+  .mbtns{flex-direction:column-reverse}
+  .mbtns button{width:100%;padding:13px}
+  #video-modal .modal{border-radius:14px;margin:0 10px}
+
+  .imp-filters{overflow-x:auto;flex-wrap:nowrap;padding-bottom:4px;-webkit-overflow-scrolling:touch}
+  .fpill{flex:none}
+  .claim-row{flex-wrap:wrap}
+  .claim-nm{flex:1 1 100%}
+}
+
+@media (max-width:400px){
+  .ov-strip{grid-template-columns:1fr}
+  .kpi-grid{grid-template-columns:1fr}
+  .pipe-track{grid-template-columns:1fr}
+}
+
+/* -- DRAWER: reparented to document body, escapes #topbar stacking context -- */
+@media (max-width:900px){
+  body > .tb-nav{
+    position:fixed;top:0;right:0;bottom:0;left:auto;
+    width:270px;max-width:82vw;height:100vh;height:100dvh;
+    background:#fff;
+    display:flex;flex-direction:column;align-items:stretch;
+    margin:0;padding:64px 0 20px;
+    box-shadow:-8px 0 30px rgba(0,0,0,.28);
+    transform:translateX(100%);transition:transform .24s ease;
+    z-index:100000 !important;overflow-y:auto;-webkit-overflow-scrolling:touch;
+  }
+  body > .tb-nav.open{transform:translateX(0)}
+  body > .tb-scrim{z-index:99999}
+  /* Opaque fill painted inside the drawer, behind its own content.
+     Immune to whatever was making the element background composite oddly. */
+  body > .tb-nav::before{
+    content:'';position:absolute;inset:0;
+    background:#fff;z-index:0;pointer-events:none}
+  body > .tb-nav > *{position:relative;z-index:1}
+}
+</style>
+</head>
+<body>
+<!-- ══ BOOT LOADER (prevents auth flash on navigation) ══ -->
+<style>
+#omega-boot{position:fixed;inset:0;z-index:2147483000;background:#0B1E35;
+  display:flex;flex-direction:column;align-items:center;justify-content:center;gap:20px;
+  transition:opacity .28s ease}
+#omega-boot.hide{opacity:0;pointer-events:none}
+#omega-boot .ob-mark{width:60px;height:60px;border-radius:16px;
+  background:linear-gradient(135deg,#006F9A,#00A9A4);
+  display:flex;align-items:center;justify-content:center;
+  color:#fff;font:700 30px/1 'DM Sans',sans-serif;
+  box-shadow:0 12px 30px rgba(0,169,164,.35)}
+#omega-boot .ob-spin{width:26px;height:26px;border:3px solid rgba(255,255,255,.25);
+  border-top-color:#00C4BC;border-radius:50%;animation:ob-spin .7s linear infinite}
+#omega-boot .ob-txt{color:#8CA3BE;font:500 13px/1 'DM Sans',sans-serif;letter-spacing:.3px}
+@keyframes ob-spin{to{transform:rotate(360deg)}}
+/* Failsafe: never let the loader trap the user if JS fails to dismiss it. */
+#omega-boot{animation:ob-failsafe 0s linear 8s forwards}
+@keyframes ob-failsafe{to{opacity:0;pointer-events:none;visibility:hidden}}
+</style>
+
+/* ══════════════════════════════════════════════════════════════════════
+   ORIGINATION FUNNEL  —  the only dashboard this portal has.
+   Four stages, in order, each one a strict subset of the one before it:
+     identified → called → sold → in editor
+   ══════════════════════════════════════════════════════════════════════ */
+.funnel-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-top:16px}
+@media (max-width:900px){ .funnel-grid{grid-template-columns:1fr 1fr} }
+@media (max-width:520px){ .funnel-grid{grid-template-columns:1fr} }
+
+.fstage{background:#fff;border:1px solid var(--cs-border);border-radius:14px;padding:18px 20px 16px;
+  box-shadow:0 2px 10px rgba(0,0,0,.05);position:relative;overflow:hidden}
+.fstage::before{content:'';position:absolute;left:0;top:0;bottom:0;width:4px;background:var(--cs-sky);opacity:.75}
+.fstage.s1::before{background:#5B9BD5}
+.fstage.s2::before{background:#00A9A4}
+.fstage.s3::before{background:#1DB954}
+.fstage.s4::before{background:#08384F}
+.fs-label{font-size:11px;font-weight:700;color:var(--cs-sub);text-transform:uppercase;letter-spacing:.5px}
+.fs-val{font-size:34px;font-weight:700;color:var(--cs-navy);letter-spacing:-1px;margin-top:8px;line-height:1;
+  font-variant-numeric:tabular-nums}
+.fs-conv{font-size:11.5px;color:var(--cs-sub);margin-top:8px;display:flex;align-items:center;gap:6px}
+.fs-conv b{color:var(--cs-accent);font-weight:700}
+.fs-bar{height:4px;border-radius:3px;background:#EEF1F4;margin-top:10px;overflow:hidden}
+.fs-bar > i{display:block;height:100%;border-radius:3px;background:var(--cs-sky);transition:width .5s ease}
+.fstage.s1 .fs-bar > i{background:#5B9BD5}
+.fstage.s2 .fs-bar > i{background:#00A9A4}
+.fstage.s3 .fs-bar > i{background:#1DB954}
+.fstage.s4 .fs-bar > i{background:#08384F}
+
+/* Secondary origination stats (capacity, avg days, open sites) */
+.orig-strip{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-top:12px}
+@media (max-width:900px){ .orig-strip{grid-template-columns:1fr 1fr} }
+.ostat{background:var(--cs-surface);border:1px solid var(--cs-border);border-radius:12px;padding:13px 16px}
+.ostat .l{font-size:10.5px;font-weight:600;color:var(--cs-sub);text-transform:uppercase;letter-spacing:.4px}
+.ostat .v{font-size:19px;font-weight:700;color:var(--cs-navy);margin-top:4px;letter-spacing:-.3px;
+  font-variant-numeric:tabular-nums}
+.ostat .v .unit{font-size:12px;font-weight:600;color:var(--cs-sub);margin-left:3px}
+
+/* ── SALES REP DASHBOARD ── */
+.rep-toolbar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:12px}
+.rep-chip{border:1px solid var(--cs-border);background:#fff;border-radius:20px;padding:6px 14px;
+  font:600 12px 'DM Sans',sans-serif;color:var(--cs-sub);cursor:pointer;transition:all .12s;white-space:nowrap}
+.rep-chip:hover{border-color:var(--cs-sky);color:var(--cs-navy)}
+.rep-chip.on{background:var(--cs-navy);border-color:var(--cs-navy);color:#fff}
+
+.rtable{width:100%;border-collapse:collapse;font-size:13px}
+.rtable thead th{text-align:left;padding:11px 14px;font-size:10.5px;font-weight:700;color:var(--cs-sub);
+  text-transform:uppercase;letter-spacing:.5px;background:var(--cs-surface);border-bottom:1px solid var(--cs-border);
+  white-space:nowrap;cursor:pointer;user-select:none}
+.rtable thead th:hover{color:var(--cs-navy)}
+.rtable thead th.num,.rtable tbody td.num{text-align:right;font-variant-numeric:tabular-nums}
+.rtable tbody td{padding:12px 14px;border-bottom:1px solid var(--cs-border);vertical-align:middle}
+.rtable tbody tr:last-child td{border-bottom:none}
+.rtable tbody tr:hover{background:#FAFBFC}
+.rtable tbody tr.is-me{background:rgba(0,169,164,.05)}
+.rep-cell{display:flex;align-items:center;gap:10px;min-width:0}
+.rep-av{width:30px;height:30px;border-radius:50%;background:var(--cs-sky);color:#fff;display:flex;
+  align-items:center;justify-content:center;font-weight:700;font-size:11.5px;flex:none;text-transform:uppercase}
+.rep-nm{font-weight:600;color:var(--cs-navy);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.rep-em{font-size:10.5px;color:var(--cs-sub);font-family:'DM Mono',monospace;white-space:nowrap;
+  overflow:hidden;text-overflow:ellipsis}
+.rep-you{font-size:9.5px;font-weight:700;color:var(--cs-accent);letter-spacing:.4px}
+.rate{font-weight:700}
+.rate.hi{color:#137A38}
+.rate.mid{color:#B45309}
+.rate.lo{color:var(--cs-sub)}
+
+/* Inline mini bar inside the rep table so relative volume reads at a glance */
+.mini-bar{height:4px;border-radius:3px;background:#EEF1F4;margin-top:5px;overflow:hidden;min-width:44px}
+.mini-bar > i{display:block;height:100%;background:var(--cs-sky);border-radius:3px}
+
+/* ── ACTIVITY FEED ── */
+.act-list{display:flex;flex-direction:column}
+.act-item{display:flex;gap:12px;padding:12px 0;border-bottom:1px solid var(--cs-border)}
+.act-item:last-child{border-bottom:none}
+.act-dot{width:9px;height:9px;border-radius:50%;flex:none;margin-top:5px;background:var(--cs-sky)}
+.act-dot.identified{background:#5B9BD5}
+.act-dot.contacted{background:#00A9A4}
+.act-dot.won{background:#1DB954}
+.act-dot.lost{background:#C2CBD4}
+.act-dot.editor{background:#08384F}
+.act-body{flex:1;min-width:0}
+.act-txt{font-size:13px;color:var(--cs-text);line-height:1.45}
+.act-txt b{color:var(--cs-navy);font-weight:600}
+.act-when{font-size:11px;color:var(--cs-sub);margin-top:2px}
+
+/* ── STATUS PILLS ── */
+.spill{font-size:10.5px;font-weight:700;padding:3px 10px;border-radius:20px;white-space:nowrap;
+  text-transform:uppercase;letter-spacing:.4px}
+.spill.identified{background:rgba(91,155,213,.15);color:#2C5F8F}
+.spill.contacted{background:rgba(0,169,164,.15);color:#00736F}
+.spill.qualified{background:rgba(0,112,242,.12);color:#0B57A4}
+.spill.won{background:rgba(29,185,84,.16);color:#137A38}
+.spill.lost{background:#EEF1F4;color:var(--cs-sub)}
+
+/* ── EMPTY STATE ──
+   Deliberately NOT sample data. A funnel with invented numbers in it is worse
+   than an empty one — a rep will act on it. Show zeros and say why. */
+.empty-note{background:rgba(217,119,6,.07);border:1px solid rgba(217,119,6,.25);border-radius:12px;
+  padding:16px 18px;margin-top:16px;display:flex;gap:12px;align-items:flex-start}
+.empty-note svg{flex:none;color:#B45309;margin-top:1px}
+.empty-note .t{font-size:13px;font-weight:700;color:#8A4708}
+.empty-note .d{font-size:12.5px;color:#96551C;margin-top:3px;line-height:1.5}
+.empty-note code{font-family:'DM Mono',monospace;font-size:11.5px;background:rgba(217,119,6,.12);
+  padding:1px 6px;border-radius:4px}
+
+.tbl-empty{padding:34px;text-align:center;color:var(--cs-sub);font-size:13px}
+
+/* Two-column: rep table + activity */
+.orig-cols{display:grid;grid-template-columns:1.9fr 1fr;gap:18px;align-items:start;margin-top:16px}
+@media (max-width:1000px){ .orig-cols{grid-template-columns:1fr} }
+</style>
+
+<!-- ══ BOOT LOADER (prevents auth flash on navigation) ══ -->
+<style>
+#omega-boot{position:fixed;inset:0;z-index:2147483000;background:#0B1E35;
+  display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;
+  transition:opacity .3s ease;}
+#omega-boot.hide{opacity:0;pointer-events:none}
+#omega-boot .ob-mark{color:#00A9A4;font:700 40px/1 'DM Sans',sans-serif;letter-spacing:-1px}
+#omega-boot .ob-spin{width:26px;height:26px;border:2.5px solid rgba(255,255,255,.15);
+  border-top-color:#00A9A4;border-radius:50%;animation:ob-spin .8s linear infinite}
+#omega-boot .ob-txt{color:#8CA3BE;font:500 13px/1 'DM Sans',sans-serif;letter-spacing:.3px}
+@keyframes ob-spin{to{transform:rotate(360deg)}}
+/* Failsafe: never let the loader trap the user if JS fails to dismiss it. */
+#omega-boot{animation:ob-failsafe 0s linear 8s forwards}
+@keyframes ob-failsafe{to{opacity:0;pointer-events:none;visibility:hidden}}
+</style>
+<div id="omega-boot" role="status" aria-label="Loading">
+  <div class="ob-mark">&Omega;</div>
+  <div class="ob-spin"></div>
+  <div class="ob-txt">Loading your workspace…</div>
+</div>
+<script>
+window._omegaReady = function(){
+  var el = document.getElementById('omega-boot');
+  if (!el || el.classList.contains('hide')) return;
+  el.classList.add('hide');
+  setTimeout(function(){ if (el && el.parentNode) el.parentNode.removeChild(el); }, 320);
+};
+</script>
+
+<!-- ══════════════ AUTH SCREEN ══════════════ -->
+<div id="auth-screen">
+  <div class="auth-card">
+    <div class="auth-logo">
+      <img src="/clearsky-omega-mark-white.png" alt="OMEGA"
+           style="height:52px;width:auto;display:block;margin:0 auto;filter:invert(1) hue-rotate(180deg)"
+           onerror="this.style.display='none'">
+    </div>
+    <div class="auth-company">Solela LLC</div>
+    <div class="auth-sub" id="auth-sub">Site origination &amp; development · Chileasing Energy</div>
+
+    <div class="auth-fields">
+      <div class="auth-field">
+        <label for="auth-email">Work email</label>
+        <input id="auth-email" type="email" placeholder="you@chileasing.com" autocomplete="email">
+      </div>
+      <div class="auth-field">
+        <label for="auth-pass">Password</label>
+        <input id="auth-pass" type="password" placeholder="••••••••" autocomplete="current-password">
+      </div>
+      <div class="auth-field" id="auth-name-wrap" style="display:none">
+        <label for="auth-name">Full name</label>
+        <input id="auth-name" type="text" placeholder="Jane Smith" autocomplete="name">
+      </div>
+    </div>
+    <button class="btn-email" id="email-auth-btn" onclick="emailAuth()">Sign in</button>
+    <div class="auth-forgot" id="auth-forgot-wrap">
+      <a onclick="sendPasswordReset()" id="auth-forgot-link">Forgot password?</a>
+    </div>
+    <div class="auth-toggle" id="auth-toggle-wrap">
+      New to the Solela workspace? <a onclick="toggleAuthMode()" id="auth-toggle-link">Create an account</a>
+    </div>
+
+    <p class="auth-note" style="margin-top:22px">Access restricted to <strong>@chileasing.com</strong> accounts · Powered by ClearSky-OMEGA</p>
+    <div id="auth-err"></div>
+    <div id="auth-ok"></div>
+  </div>
+</div>
+
+<!-- ══════════════ PORTAL APP ══════════════ -->
+<div id="app">
+
+  <!-- TOPBAR — three destinations only: Portal, ComEd Capacity, Projects -->
+  <div id="topbar">
+    <a href="/" class="tb-logo">
+      <img src="/clearsky-omega-mark-white.png" alt="OMEGA" class="tb-omega" onerror="this.style.display='none'">
+    </a>
+    <div class="tb-sep"></div>
+    <span class="tb-portal">EnergyOS</span>
+    <div class="tb-client">
+      <span class="tb-client-chip" id="tb-client-chip"><span id="tb-client-logo" class="tb-client-txt">Solela LLC</span></span>
+      <span class="tb-ent-badge" id="tb-ent-badge">Enterprise Account</span>
+    </div>
+    <div class="tb-nav">
+      <a class="tb-tab active" href="/">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+        Portal
+      </a>
+      <a class="tb-tab" href="/comed-capacity.html" id="tab-comed">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2 4 6v6c0 5 3.4 9.4 8 10 4.6-.6 8-5 8-10V6z"/><path d="M12 8v4M12 16h.01"/></svg>
+        ComEd Capacity
+      </a>
+      <a class="tb-tab" href="/projects.html">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
+        Projects
+      </a>
+    </div>
+    <div class="tb-spacer"></div>
+    <div class="tb-user">
+      <div id="tb-avatar-wrap"></div>
+      <span class="tb-name" id="tb-name"></span>
+      <button class="btn-signout" onclick="openAccount()" style="margin-right:6px">Account</button>
+      <button class="btn-signout" onclick="signOut()">Sign Out</button>
+    </div>
+  </div>
+
+  <!-- MAIN -->
+  <div id="main">
+
+    <!-- ══ HERO ══ -->
+    <div id="dash-hero">
+      <div class="dash-label" id="dash-label">SITE ORIGINATION</div>
+      <div class="dash-welcome" id="welcome-name">Welcome back</div>
+      <div class="dash-date" id="dash-date" style="font-size:13px;color:var(--cs-sub);margin-top:4px;font-weight:600"></div>
+      <div class="dash-sub" id="dash-sub">Every site your team has identified on the ComEd hosting-capacity map, and how far each one has moved: identified, called, sold, and built out in the site editor.</div>
+    </div>
+
+    <!-- ══════════════════════════════════════════════════════════════════
+         ORIGINATION FUNNEL — the four numbers that matter
+         ══════════════════════════════════════════════════════════════════ -->
+    <div class="block-head" style="margin-top:8px">
+      <div>
+        <div class="block-title">Origination Funnel</div>
+        <div class="block-sub" id="funnel-sub">Sites identified on the ComEd Capacity Map, by stage</div>
+      </div>
+      <button class="block-toggle" onclick="refreshAll()" id="refresh-btn">
+        <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 1 1-3-6.7M21 3v6h-6"/></svg>
+        Refresh
+      </button>
+    </div>
+
+    <div class="funnel-grid">
+      <div class="fstage s1">
+        <div class="fs-label">Sites Identified</div>
+        <div class="fs-val" id="f-identified">0</div>
+        <div class="fs-bar"><i id="f-bar-1" style="width:0%"></i></div>
+        <div class="fs-conv" id="f-conv-1">On the capacity map</div>
+      </div>
+      <div class="fstage s2">
+        <div class="fs-label">Sites Called</div>
+        <div class="fs-val" id="f-called">0</div>
+        <div class="fs-bar"><i id="f-bar-2" style="width:0%"></i></div>
+        <div class="fs-conv" id="f-conv-2">—</div>
+      </div>
+      <div class="fstage s3">
+        <div class="fs-label">Sales Made</div>
+        <div class="fs-val" id="f-won">0</div>
+        <div class="fs-bar"><i id="f-bar-3" style="width:0%"></i></div>
+        <div class="fs-conv" id="f-conv-3">—</div>
+      </div>
+      <div class="fstage s4">
+        <div class="fs-label">Sites In Editor</div>
+        <div class="fs-val" id="f-editor">0</div>
+        <div class="fs-bar"><i id="f-bar-4" style="width:0%"></i></div>
+        <div class="fs-conv" id="f-conv-4">—</div>
+      </div>
+    </div>
+
+    <!-- Secondary origination stats -->
+    <div class="orig-strip">
+      <div class="ostat"><div class="l">Capacity Identified</div><div class="v" id="o-kw">0<span class="unit">MW</span></div></div>
+      <div class="ostat"><div class="l">Open — Not Yet Called</div><div class="v" id="o-open">0</div></div>
+      <div class="ostat"><div class="l">Avg Days · Called → Sold</div><div class="v" id="o-cycle">—</div></div>
+      <div class="ostat"><div class="l">Active Reps</div><div class="v" id="o-reps">0</div></div>
+    </div>
+
+    <!-- Shown only when the sites collection is empty -->
+    <div class="empty-note" id="empty-note" style="display:none">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 9v4M12 17h.01"/><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/></svg>
+      <div>
+        <div class="t">No identified sites yet</div>
+        <div class="d">The funnel reads the <code>sites</code> collection, which the ComEd Capacity Map writes to when a rep saves a site. Until a site is saved there, every number above is a true zero — this dashboard never shows sample data. See <code>SITE_SCHEMA</code> in this file for the shape it expects.</div>
+      </div>
+    </div>
+
+    <!-- ══════════════════════════════════════════════════════════════════
+         SALES REP DASHBOARD
+         ══════════════════════════════════════════════════════════════════ -->
+    <div class="block-head" style="margin-top:26px">
+      <div>
+        <div class="block-title">Sales Reps<span class="cnt" id="rep-count">0</span></div>
+        <div class="block-sub">Per-rep progress through the same four stages · click a column to sort</div>
+      </div>
+    </div>
+
+    <div class="rep-toolbar">
+      <span style="font-size:11px;font-weight:600;color:var(--cs-sub);text-transform:uppercase;letter-spacing:.4px">Window</span>
+      <button class="rep-chip on"  data-days="0"  onclick="setWindow(0,this)">All time</button>
+      <button class="rep-chip"     data-days="90" onclick="setWindow(90,this)">Last 90 days</button>
+      <button class="rep-chip"     data-days="30" onclick="setWindow(30,this)">Last 30 days</button>
+      <button class="rep-chip"     data-days="7"  onclick="setWindow(7,this)">Last 7 days</button>
+    </div>
+
+    <div class="orig-cols">
+      <div class="table-wrap">
+        <table class="rtable" id="rep-table">
+          <thead>
+            <tr>
+              <th onclick="sortReps('name')">Rep</th>
+              <th class="num" onclick="sortReps('identified')">Identified</th>
+              <th class="num" onclick="sortReps('called')">Called</th>
+              <th class="num" onclick="sortReps('won')">Sold</th>
+              <th class="num" onclick="sortReps('editor')">In Editor</th>
+              <th class="num" onclick="sortReps('callRate')">Call %</th>
+              <th class="num" onclick="sortReps('closeRate')">Close %</th>
+              <th class="num" onclick="sortReps('last')">Last Activity</th>
+            </tr>
+          </thead>
+          <tbody id="rep-body">
+            <tr><td colspan="8" class="tbl-empty">Loading reps…</td></tr>
+          </tbody>
+        </table>
+        <div class="table-foot" id="rep-foot">Close % is sold ÷ called — the number a rep actually controls.</div>
+      </div>
+
+      <div class="actions-panel">
+        <div class="ap-head">Recent Activity</div>
+        <div class="ap-sub" style="font-size:12px;color:var(--cs-sub);margin-bottom:6px">Latest movement across the funnel</div>
+        <div class="act-list" id="act-list">
+          <div class="tbl-empty" style="padding:20px">Loading…</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ══════════════════════════════════════════════════════════════════
+         SITES TABLE — the identified sites themselves
+         ══════════════════════════════════════════════════════════════════ -->
+    <div class="block-head" style="margin-top:26px">
+      <div>
+        <div class="block-title">Identified Sites<span class="cnt" id="site-count">0</span></div>
+        <div class="block-sub">From the ComEd Capacity Map · newest first</div>
+      </div>
+      <a class="block-toggle" href="/comed-capacity.html" style="text-decoration:none">
+        <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2 4 6v6c0 5 3.4 9.4 8 10 4.6-.6 8-5 8-10V6z"/></svg>
+        Open Capacity Map
+      </a>
+    </div>
+
+    <div class="table-wrap">
+      <table class="rtable" id="site-table">
+        <thead>
+          <tr>
+            <th>Site</th>
+            <th>Rep</th>
+            <th class="num">Capacity</th>
+            <th>Status</th>
+            <th>Project</th>
+            <th class="num">Identified</th>
+          </tr>
+        </thead>
+        <tbody id="site-body">
+          <tr><td colspan="6" class="tbl-empty">Loading sites…</td></tr>
+        </tbody>
+      </table>
+      <div class="table-foot" id="site-foot">Showing the 25 most recent.</div>
+    </div>
+
+    <!-- ══ TOOLS — only the two this tenant has ══ -->
+    <div class="block-head" style="margin-top:26px">
+      <div><div class="block-title">Tools</div></div>
+    </div>
+    <div class="quick-row" style="grid-template-columns:repeat(3,1fr)">
+      <a class="quick-link" href="/comed-capacity.html">
+        <div class="ql-icon"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2 4 6v6c0 5 3.4 9.4 8 10 4.6-.6 8-5 8-10V6z"/><path d="M12 8v4M12 16h.01"/></svg></div>
+        <div class="ql-title">ComEd Capacity Map</div>
+        <div class="ql-desc">Screen hosting capacity and identify new sites.</div>
+      </a>
+      <a class="quick-link" onclick="openNewProjectModal()" style="cursor:pointer">
+        <div class="ql-icon"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 7h20v14H2z"/><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/></svg></div>
+        <div class="ql-title">BESS Site Map</div>
+        <div class="ql-desc">Lay out equipment and conduit on live satellite.</div>
+      </a>
+      <a class="quick-link" href="/projects.html">
+        <div class="ql-icon"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg></div>
+        <div class="ql-title">Projects</div>
+        <div class="ql-desc">Every site your team has taken forward.</div>
+      </a>
+    </div>
+
+  </div><!-- /#main -->
+</div><!-- /#app -->
+<div class="modal-bg" id="new-proj-modal">
+  <div class="modal">
+    <h3>New Project</h3>
+    <div class="mrow">
+      <label>Project / Site Name</label>
+      <input id="np-name" placeholder="e.g. Riverside BESS 5MWh" autofocus>
+    </div>
+    <div class="mrow">
+      <label>Site Address</label>
+      <input id="np-addr" placeholder="e.g. 1234 Main St, Clinton, IA 52732">
+    </div>
+    <div class="mrow">
+      <label>Project Type</label>
+      <select id="np-type">
+        <option value="bess">BESS – Battery Energy Storage System</option>
+        <option value="dcfc">DCFC – DC Fast Charging</option>
+        <option value="solar">Solar + Storage</option>
+        <option value="other">Other</option>
+      </select>
+    </div>
+    <div class="mrow">
+      <label>Client / Customer</label>
+      <input id="np-client" placeholder="e.g. City of Clinton">
+    </div>
+    <div class="mbtns">
+      <button class="mb-cancel" onclick="closeNewProjectModal()">Cancel</button>
+      <button class="mb-create" onclick="createProject()">Create &amp; Open Editor →</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══ ACCOUNT SETTINGS MODAL ══ -->
+<div class="acct-overlay" id="acct-overlay" onclick="if(event.target===this)closeAccount()">
+  <div class="acct-modal">
+    <div class="acct-head">
+      <h3>Account settings</h3>
+      <button class="acct-close" onclick="closeAccount()">&times;</button>
+    </div>
+    <div class="acct-body">
+
+      <!-- Profile: display name + avatar (shown across the Team Hub) -->
+      <div class="acct-profile">
+        <div class="acct-av-wrap">
+          <div id="acct-av-preview" class="acct-av"></div>
+          <div class="acct-av-actions">
+            <button class="acct-av-btn" onclick="document.getElementById('acct-photo-input').click()">Upload photo</button>
+            <button class="acct-av-btn ghost" id="acct-av-remove" onclick="removePhoto()" style="display:none">Remove</button>
+            <input id="acct-photo-input" type="file" accept="image/*" style="display:none" onchange="onPhotoPicked(event)">
+          </div>
+        </div>
+        <div class="acct-field" style="margin-top:14px">
+          <label>Display name</label>
+          <input id="acct-display-name" type="text" maxlength="60" placeholder="e.g. Tommy Gilmer" onkeydown="if(event.key==='Enter')saveProfile()">
+        </div>
+        <button class="acct-btn" id="acct-profile-btn" onclick="saveProfile()">Save profile</button>
+        <div class="acct-msg" id="acct-profile-msg"></div>
+      </div>
+
+      <div class="acct-sec-title">Account</div>
+      <div class="acct-row"><span class="k">Email</span><span class="v" id="acct-email">—</span></div>
+      <div class="acct-row"><span class="k">Workspace</span><span class="v" id="acct-ws">—</span></div>
+      <div class="acct-row"><span class="k">Sign-in method</span><span class="v" id="acct-provider">—</span></div>
+
+      <!-- Password change (email/password users only) -->
+      <div id="acct-pw-section">
+        <div class="acct-sec-title">Change password</div>
+        <div class="acct-field">
+          <label>Current password</label>
+          <input id="acct-cur" type="password" autocomplete="current-password" placeholder="••••••••">
+        </div>
+        <div class="acct-field">
+          <label>New password</label>
+          <input id="acct-new" type="password" autocomplete="new-password" placeholder="At least 6 characters">
+        </div>
+        <div class="acct-field">
+          <label>Confirm new password</label>
+          <input id="acct-new2" type="password" autocomplete="new-password" placeholder="Re-enter new password">
+        </div>
+        <button class="acct-btn" id="acct-pw-btn" onclick="changePassword()">Update password</button>
+        <div class="acct-msg" id="acct-msg"></div>
+      </div>
+
+      <!-- Google users can't set a password here -->
+      <div id="acct-google-note" style="display:none">
+        <div class="acct-sec-title">Password</div>
+        <div class="acct-note">You sign in with Google, so your password is managed in your Google account. To change it, visit your Google account security settings.</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
+<script src="/config.js"></script>
+<script src="/omega-tools.js?v=1"></script>
+
+<script>
+// ══════════════════════════════════════════════════════════════════════
+//  TENANT REGISTRY
+//  This portal is deliberately single-purpose: site origination off the
+//  ComEd hosting-capacity map. There is no partner type and no marketplace,
+//  so a workspace only needs an org, a name, and its two tools.
+//
+//  To add a tenant: one entry keyed by email domain. Firestore rules still
+//  scope every read by orgId; this map only decides WHICH orgId a signed-in
+//  user maps to.
+// ══════════════════════════════════════════════════════════════════════
+var WORKSPACES = {
+
+  // Solela LLC — the JV entity (portal brand). The users are Chileasing
+  // Energy, signing in with @chileasing.com, so orgId is chileasing.com and
+  // every site/project doc scopes to that domain (matches Firestore userOrg()).
+  'chileasing.com': {
+    type: 'developer',
+    orgId: 'chileasing.com',
+    clientName: 'Solela LLC',
+    accountTier: 'Enterprise',
+    tierLevel: 1,
+    allowedDomain: 'chileasing.com',
+    // The ONLY two tools this tenant has. tierLevel 1 + this allowlist means
+    // anything added to the registry later stays locked until listed here.
+    requiredTools: ['comed_capacity','editor'],
+    unlockedTools: ['comed_capacity','editor'],
+    exportBrand: {
+      name: 'Solela LLC',
+      subName: 'Chileasing Energy',
+      poweredBy: 'Powered by ClearSky-OMEGA',
+      platformCopyright: '© 2026 ClearSky Energy Solutions LLC · ClearSky-OMEGA platform'
+    }
+  },
+
+  // ClearSky's own internal workspace — for support and QA of this tenant.
+  'csebuilders.com': {
+    type: 'developer',
+    orgId: 'csebuilders.com',
+    clientName: 'ClearSky Energy Solutions',
+    accountTier: 'Internal',
+    tierLevel: 3,
+    allowedDomain: 'csebuilders.com',
+    requiredTools: ['comed_capacity','editor'],
+    exportBrand: {
+      logo: '/clearsky-logo.png',
+      name: 'ClearSky Energy Solutions',
+      poweredBy: 'ClearSky-OMEGA',
+      platformCopyright: '© 2026 ClearSky Energy Solutions LLC · ClearSky-OMEGA platform'
+    }
+  }
+
+};
+
+function domainOf(email){ return (email || '').split('@')[1] ? email.split('@')[1].toLowerCase() : ''; }
+
+function resolveWorkspace(email){
+  var dom = domainOf(email);
+  return (dom && WORKSPACES.hasOwnProperty(dom)) ? WORKSPACES[dom] : null;
+}
+
+var WORKSPACE = null;
+window.OMEGA_WORKSPACE = null;
+// ══════════ FIREBASE INIT ══════════
+let CFG, auth, db, currentUser = null, currentOrg = null;
+
+function _initFirebase() {
+  if (typeof firebase === 'undefined' || !window.CLEARSKY_CONFIG) {
+    setTimeout(_initFirebase, 120);
+    return;
+  }
+  CFG = window.CLEARSKY_CONFIG;
+  try { firebase.initializeApp(CFG.firebase); }
+  catch (e) { if (!/already exists/.test(e.message)) console.error('Firebase init:', e); }
+  auth = firebase.auth();
+  db = firebase.firestore();
+  _wireAuth();
+}
+
+// ══════════ AUTH STATE (multi-tenant: resolve workspace by domain) ══════════
+function _wireAuth() {
+auth.onAuthStateChanged(user => {
+  if (window._omegaReady) window._omegaReady();
+  if (user) {
+    const email = user.email || '';
+    // Resolve which registered workspace this user belongs to, by email domain.
+    var ws = resolveWorkspace(email);
+    if (!ws) {
+      showAuthErr('No ClearSky-OMEGA workspace is provisioned for @' + (domainOf(email) || 'your domain') + '. Contact your administrator to be added.');
+      auth.signOut();
+      return;
+    }
+    // Bind this session to the resolved tenant.
+    WORKSPACE = ws;
+    window.OMEGA_WORKSPACE = ws;    // every tool page reads the same branding/tenant
+    currentUser = user;
+    currentOrg = ws.orgId;          // scopes this user's own data (developer) or partner org
+
+    showApp(user);
+    applyToolLocks();   // this tenant: ComEd Capacity Map + BESS editor only
+
+    initTeam();         // member names/avatars for the rep table
+    refreshAll();       // load sites + projects, then paint the funnel
+  } else {
+    currentUser = null;
+    WORKSPACE = null; window.OMEGA_WORKSPACE = null;
+    showLogin();
+  }
+});
+}
+
+function showRedirecting(name){
+  document.getElementById('auth-screen').style.display = 'flex';
+  document.getElementById('app').style.display = 'none';
+  var ok = document.getElementById('auth-ok');
+  ok.textContent = 'Signed in — taking you to the ' + name + ' workspace…';
+  ok.style.display = 'block';
+}
+
+function showLogin() {
+  document.getElementById('auth-screen').style.display = 'flex';
+  document.getElementById('app').style.display = 'none';
+}
+function setText(id, t){ var el=document.getElementById(id); if(el) el.textContent=t; }
+function setDisplay(id, d){ var el=document.getElementById(id); if(el) el.style.display=d; }
+
+function signOut() {
+  auth.signOut();
+}
+
+// ══════════ EMAIL / PASSWORD AUTH (enterprise clients) ══════════
+var authMode = 'signin'; // or 'signup'
+
+function toggleAuthMode() {
+  authMode = (authMode === 'signin') ? 'signup' : 'signin';
+  var isSignup = authMode === 'signup';
+  document.getElementById('auth-name-wrap').style.display = isSignup ? 'block' : 'none';
+  document.getElementById('email-auth-btn').textContent = isSignup ? 'Create account' : 'Sign in';
+  var fw = document.getElementById('auth-forgot-wrap'); if (fw) fw.style.display = isSignup ? 'none' : 'block';
+  document.getElementById('auth-toggle-wrap').innerHTML = isSignup
+    ? 'Already have an account? <a onclick="toggleAuthMode()">Sign in</a>'
+    : 'New client? <a onclick="toggleAuthMode()">Create an account</a>';
+  document.getElementById('auth-sub').textContent = isSignup
+    ? 'Create your enterprise workspace account'
+    : 'Project & asset management for distributed energy';
+  clearAuthMsg();
+}
+
+function emailAuth() {
+  clearAuthMsg();
+  var email = document.getElementById('auth-email').value.trim();
+  var pass = document.getElementById('auth-pass').value;
+  if (!email || !pass) { showAuthErr('Enter your email and password.'); return; }
+
+  // Accept any domain registered in the workspace registry. Unknown domains
+  // are rejected up front (and again in onAuthStateChanged as defense-in-depth).
+  var wsPre = resolveWorkspace(email);
+  if (!wsPre) {
+    showAuthErr('No ClearSky-OMEGA workspace is provisioned for that email domain. Contact your administrator.');
+    return;
+  }
+
+  var btn = document.getElementById('email-auth-btn');
+  btn.disabled = true;
+  btn.textContent = (authMode === 'signup') ? 'Creating…' : 'Signing in…';
+
+  if (authMode === 'signup') {
+    var name = document.getElementById('auth-name').value.trim();
+    auth.createUserWithEmailAndPassword(email, pass)
+      .then(function(cred) {
+        if (name && cred.user) return cred.user.updateProfile({ displayName: name });
+      })
+      .catch(function(err) { showAuthErr(friendlyAuthErr(err)); resetEmailBtn(); });
+    // onAuthStateChanged handles routing on success
+  } else {
+    auth.signInWithEmailAndPassword(email, pass)
+      .catch(function(err) { showAuthErr(friendlyAuthErr(err)); resetEmailBtn(); });
+  }
+}
+
+function resetEmailBtn() {
+  var btn = document.getElementById('email-auth-btn');
+  btn.disabled = false;
+  btn.textContent = (authMode === 'signup') ? 'Create account' : 'Sign in';
+}
+
+function friendlyAuthErr(err) {
+  var m = (err && err.code) || '';
+  if (m === 'auth/email-already-in-use') return 'That email already has an account — try signing in.';
+  if (m === 'auth/invalid-email') return 'That email address looks invalid.';
+  if (m === 'auth/weak-password') return 'Password should be at least 6 characters.';
+  // Firebase returns invalid-credential for both a wrong password and an
+  // unknown account (by design). Treat it as an incorrect password and offer
+  // a reset link — handled specially by showAuthCredErr(), so this returns ''.
+  if (m === 'auth/wrong-password' || m === 'auth/invalid-credential') return '__CRED__';
+  if (m === 'auth/user-not-found') return '__CRED__';
+  if (m === 'auth/too-many-requests') return 'Too many attempts. Try again in a few minutes, or reset your password.';
+  return (err && err.message) || 'Something went wrong. Try again.';
+}
+
+/* Wrong-password / bad-credential message with an inline "Reset it" link. */
+function showAuthCredErr() {
+  var el = document.getElementById('auth-err');
+  if (!el) return;
+  el.innerHTML = 'Incorrect password. <a onclick="sendPasswordReset()" style="color:var(--cs-sky);font-weight:600;cursor:pointer;text-decoration:underline">Reset it</a> if you forgot.';
+  el.style.display = 'block';
+  var ok = document.getElementById('auth-ok'); if (ok) ok.style.display = 'none';
+}
+
+function showAuthErr(msg) {
+  if (msg === '__CRED__') { showAuthCredErr(); return; }
+  var el = document.getElementById('auth-err');
+  el.textContent = msg;
+  el.style.display = 'block';
+  var ok = document.getElementById('auth-ok'); if (ok) ok.style.display = 'none';
+}
+function clearAuthMsg() {
+  var e = document.getElementById('auth-err'); if (e) e.style.display = 'none';
+  var o = document.getElementById('auth-ok'); if (o) o.style.display = 'none';
+}
+function showAuthOk(msg) {
+  var el = document.getElementById('auth-ok');
+  if (el){ el.textContent = msg; el.style.display = 'block'; }
+  var e = document.getElementById('auth-err'); if (e) e.style.display = 'none';
+}
+
+/* ── Forgot password: send a reset email (approved domains only) ── */
+function sendPasswordReset() {
+  clearAuthMsg();
+  var email = document.getElementById('auth-email').value.trim();
+  if (!email) { showAuthErr('Enter your email above, then tap “Forgot password?”'); return; }
+  // Only send resets for provisioned domains (mirrors sign-in gating).
+  if (!resolveWorkspace(email)) {
+    showAuthErr('No workspace is provisioned for that email domain. Contact your administrator.');
+    return;
+  }
+  var link = document.getElementById('auth-forgot-link');
+  if (link) link.textContent = 'Sending…';
+  auth.sendPasswordResetEmail(email)
+    .then(function(){
+      showAuthOk('Password reset email sent to ' + email + '. Check your inbox (and spam).');
+    })
+    .catch(function(err){
+      // Don't reveal whether an account exists; show a generic-ish message.
+      var code = (err && err.code) || '';
+      if (code === 'auth/invalid-email') showAuthErr('That email address looks invalid.');
+      else if (code === 'auth/too-many-requests') showAuthErr('Too many attempts. Try again in a few minutes.');
+      else showAuthErr('Could not send reset email. Double-check the address and try again.');
+    })
+    .then(function(){ if (link) link.textContent = 'Forgot password?'; });
+}
+
+function _meEmail(){ return (currentUser && currentUser.email) ? currentUser.email.toLowerCase() : ''; }
+function _meName(){
+  if (_myProfile && _myProfile.name) return _myProfile.name;
+  if (currentUser && currentUser.displayName) return currentUser.displayName;
+  var e = _meEmail(); return e ? e.split('@')[0] : 'You';
+}
+function _memberByEmail(email){
+  for (var i=0;i<_teamMembers.length;i++){ if(_teamMembers[i].email===email) return _teamMembers[i]; }
+  return null;
+}
+function _pretty(email){
+  if (!email) return '—';
+  var m = _memberByEmail(email);
+  if (m && m.name) return m.name;
+  return email.split('@')[0];
+}
+function _initials(s){
+  s = String(s||'?').trim();
+  if (!s) return '?';
+  var parts = s.split(/\s+/);
+  if (parts.length >= 2) return (parts[0].charAt(0) + parts[1].charAt(0)).toUpperCase();
+  return s.charAt(0).toUpperCase();
+}
+/* Deterministic avatar color from an email, so each person is a stable hue. */
+var _AV_COLORS = ['#006F9A','#00A9A4','#2E86C1','#8E44AD','#D35400','#16A085','#C0392B','#2C3E50','#B7791F','#0E7C86'];
+function _avColor(email){
+  var s = String(email||''), h = 0;
+  for (var i=0;i<s.length;i++){ h = (h*31 + s.charCodeAt(i)) & 0x7fffffff; }
+  return _AV_COLORS[h % _AV_COLORS.length];
+}
+/* Render an avatar: photo if present, else colored initials. size in px. */
+function _avatarHtml(member, size){
+  size = size || 30;
+  var name = (member && member.name) || (member && member.email ? member.email.split('@')[0] : '?');
+  var email = (member && member.email) || '';
+  var photo = member && member.photo;
+  var dim = 'width:'+size+'px;height:'+size+'px;font-size:'+Math.round(size*0.4)+'px';
+  if (photo){
+    return '<span class="th-avatar" style="'+dim+';background:none"><img src="'+escHtml(photo)+'" alt="" style="width:100%;height:100%;object-fit:cover;border-radius:50%"></span>';
+  }
+  return '<span class="th-avatar" style="'+dim+';background:'+_avColor(email)+'">'+escHtml(_initials(name))+'</span>';
+}
+function _fmtWhen(ts){
+  if (!ts || !ts.toDate) return '';
+  var d = ts.toDate(), now = new Date();
+  var same = d.toDateString()===now.toDateString();
+  var t = d.toLocaleTimeString([], {hour:'numeric', minute:'2-digit'});
+  return same ? t : (d.toLocaleDateString() + ' ' + t);
+}
+
+function loadMyProfile(done){
+  try {
+    var id = currentOrg + '__' + _meEmail();
+    db.collection('team_members').doc(id).get().then(function(doc){
+      if (doc && doc.exists){ var d = doc.data(); _myProfile = { name:d.name||'', photo:d.photo||'' }; }
+      else { _myProfile = { name:'', photo:'' }; }
+      if (done) done();
+    })['catch'](function(){ _myProfile = { name:'', photo:'' }; if (done) done(); });
+  } catch(e){ _myProfile = { name:'', photo:'' }; if (done) done(); }
+}
+
+/* ── Presence: record this member so teammates can assign/DM them.
+   Uses merge + only sets name/photo if we have them, so a saved profile is
+   never clobbered by a plain login. ── */
+function registerMember(){
+  try {
+    var id = currentOrg + '__' + _meEmail();
+    var payload = {
+      orgId: currentOrg,
+      email: _meEmail(),
+      lastSeen: firebase.firestore.FieldValue.serverTimestamp()
+    };
+    // Only write name if we have a real one (saved profile or Google displayName).
+    var nm = (_myProfile && _myProfile.name) || (currentUser && currentUser.displayName) || '';
+    if (nm) payload.name = nm;
+    if (_myProfile && _myProfile.photo) payload.photo = _myProfile.photo;
+    db.collection('team_members').doc(id).set(payload, {merge:true});
+  } catch(e){ console.warn('registerMember', e); }
+}
+
+function watchMembers(){
+  var un = db.collection('team_members').where('orgId','==',currentOrg)
+    .onSnapshot(function(snap){
+      var list = [];
+      snap.forEach(function(d){ var m=d.data(); if(m.email) list.push({email:m.email, name:m.name||m.email.split('@')[0], photo:m.photo||'', lastSeen:m.lastSeen}); });
+      list.sort(function(a,b){ return a.name.localeCompare(b.name); });
+      _teamMembers = list;
+      renderMembers();   // repaints rep rows with friendly names/avatars
+    }, function(err){ console.warn('members', err); });
+  _teamUnsub.push(un);
+}
+
+/* ══════════════════════════════════════════════════════════════════════
+   ORIGINATION FUNNEL  —  the whole point of this portal
+   ----------------------------------------------------------------------
+   ONE data source: the `sites` collection, written by the ComEd Capacity
+   Map when a rep saves an identified site. Everything on this page is a
+   projection of that collection (plus `projects` to confirm the editor step).
+
+   ┌─────────────────────────────────────────────────────────────────────┐
+   │ SITE_SCHEMA — sites/{siteId}                                         │
+   │                                                                      │
+   │   orgId       'chileasing.com'   tenant tag — Firestore rules key    │
+   │   name        'Elk Grove Cold Storage'                               │
+   │   address     street address                                         │
+   │   pin         county parcel id (Cook PIN), optional                  │
+   │   feeder      ComEd feeder id, optional                              │
+   │   capacityKw  hosting capacity in kW (number)                        │
+   │   source      'comed-capacity'                                       │
+   │   status      identified | contacted | qualified | won | lost        │
+   │   repEmail    assigned rep — lowercase                               │
+   │   repName     friendly label (falls back to team_members)            │
+   │   calledAt    timestamp of FIRST contact  (null until called)        │
+   │   wonAt       timestamp of the sale       (null until won)           │
+   │   projectId   projects/{id} once pushed into the editor (null until) │
+   │   createdAt   when the rep identified it                             │
+   │   updatedAt                                                          │
+   └─────────────────────────────────────────────────────────────────────┘
+
+   IF THE CAPACITY MAP ALREADY USES DIFFERENT FIELD NAMES, do not rewrite
+   this file — remap them in FIELD_MAP below. That is the only edit needed.
+   ══════════════════════════════════════════════════════════════════════ */
+
+var SITES_COLLECTION = 'sites';
+
+/* Adapter: portal field  ->  field name as written by the capacity map.
+   Each value may be a string, or an array of candidates tried in order. */
+var FIELD_MAP = {
+  name:       ['name','siteName','title','address'],
+  address:    ['address','siteAddress','addr'],
+  capacityKw: ['capacityKw','hostingCapacityKw','capacity_kw','kw'],
+  status:     ['status','stage','siteStatus'],
+  repEmail:   ['repEmail','ownerEmail','assignedTo','uidEmail'],
+  repName:    ['repName','ownerName','assignedName'],
+  calledAt:   ['calledAt','contactedAt','firstContactAt'],
+  wonAt:      ['wonAt','soldAt','closedAt'],
+  projectId:  ['projectId','project','linkedProjectId'],
+  createdAt:  ['createdAt','identifiedAt','created']
+};
+
+function pick(doc, key){
+  var cands = FIELD_MAP[key];
+  if (typeof cands === 'string') cands = [cands];
+  for (var i = 0; i < cands.length; i++){
+    var v = doc[cands[i]];
+    if (v !== undefined && v !== null && v !== '') return v;
+  }
+  return null;
+}
+
+/* Firestore Timestamp | Date | ms | ISO string  ->  Date | null */
+function toDate(v){
+  if (!v) return null;
+  if (typeof v.toDate === 'function') return v.toDate();
+  if (v instanceof Date) return v;
+  var d = new Date(v);
+  return isNaN(d.getTime()) ? null : d;
+}
+
+/* ── Funnel stage tests ──────────────────────────────────────────────
+   Each stage is a STRICT SUBSET of the one before it. A site that was sold
+   counts as called even if nobody ever stamped calledAt — otherwise the
+   funnel can show more sales than calls, which is nonsense on its face
+   and the fastest way to lose a rep's trust in the dashboard. */
+var PAST_IDENTIFIED = ['contacted','qualified','won','lost'];
+
+function wasCalled(s){
+  if (s.calledAt) return true;
+  if (s.wonAt) return true;
+  return PAST_IDENTIFIED.indexOf(s.status) >= 0;
+}
+function wasWon(s){ return s.status === 'won' || !!s.wonAt; }
+function inEditor(s){ return !!s.projectId; }
+
+/* A site carrying a projectId whose project no longer resolves has had its
+   project deleted. Counting it would quietly overstate the last funnel stage.
+   The funnel AND the per-rep table must both use this, or the rep column will
+   not sum to the headline number — the first thing anyone checks. */
+function countsInEditor(s){
+  if (!inEditor(s)) return false;
+  if (!Object.keys(PROJECT_IDS).length) return true;   // projects not loaded yet
+  return !!PROJECT_IDS[s.projectId];
+}
+
+/* ── Normalize one Firestore doc into the shape the page uses ── */
+function normalizeSite(id, d){
+  var status = String(pick(d,'status') || 'identified').toLowerCase();
+  var email  = String(pick(d,'repEmail') || '').toLowerCase();
+  return {
+    id:        id,
+    name:      pick(d,'name') || pick(d,'address') || 'Untitled site',
+    address:   pick(d,'address') || '',
+    capacityKw: Number(pick(d,'capacityKw')) || 0,
+    status:    status,
+    repEmail:  email,
+    repName:   pick(d,'repName') || '',
+    calledAt:  toDate(pick(d,'calledAt')),
+    wonAt:     toDate(pick(d,'wonAt')),
+    projectId: pick(d,'projectId') || null,
+    createdAt: toDate(pick(d,'createdAt'))
+  };
+}
+
+/* ══════════════════════ STATE ══════════════════════ */
+var SITES        = [];    // every site for this org
+var PROJECT_IDS  = {};    // projectId -> project name, for the editor column
+var WINDOW_DAYS  = 0;     // 0 = all time
+var REP_SORT     = { key:'identified', dir:-1 };
+var SITES_LOADED = false;
+
+/* ══════════════════════ LOAD ══════════════════════ */
+async function loadSites(){
+  if (!db || !currentOrg) return;
+  try {
+    var snap = await db.collection(SITES_COLLECTION)
+                       .where('orgId','==',currentOrg).get();
+    SITES = [];
+    snap.forEach(function(doc){ SITES.push(normalizeSite(doc.id, doc.data())); });
+  } catch(e){
+    // A missing collection or a rules denial must not blank the page —
+    // it should say so. Zeros with an explanation beat a spinner forever.
+    console.warn('sites load failed:', e);
+    SITES = [];
+  }
+  SITES_LOADED = true;
+}
+
+/* Projects are the confirmation half of the "in editor" number: a site
+   carrying a projectId that no longer resolves has been deleted, and
+   counting it would quietly overstate the last stage of the funnel. */
+async function loadProjects(){
+  if (!db || !currentOrg) return;
+  try {
+    var snap = await db.collection('projects').where('orgId','==',currentOrg).get();
+    PROJECT_IDS = {};
+    snap.forEach(function(doc){
+      PROJECT_IDS[doc.id] = (doc.data() || {}).name || 'Project';
+    });
+  } catch(e){ console.warn('projects load failed:', e); }
+}
+
+/* ══════════════════════ WINDOW FILTER ══════════════════════ */
+function inWindow(s){
+  if (!WINDOW_DAYS) return true;
+  var cutoff = Date.now() - WINDOW_DAYS * 864e5;
+  var d = s.createdAt;
+  return d ? d.getTime() >= cutoff : true;   // undated sites always count
+}
+function visibleSites(){ return SITES.filter(inWindow); }
+
+function setWindow(days, btn){
+  WINDOW_DAYS = days;
+  var chips = document.querySelectorAll('.rep-chip');
+  for (var i=0;i<chips.length;i++) chips[i].classList.remove('on');
+  if (btn) btn.classList.add('on');
+  renderAll();
+}
+
+/* ══════════════════════ FUNNEL ══════════════════════ */
+function computeFunnel(list){
+  var f = { identified:0, called:0, won:0, editor:0, kw:0, cycleDays:[] };
+  for (var i=0;i<list.length;i++){
+    var s = list[i];
+    f.identified++;
+    f.kw += s.capacityKw;
+    if (wasCalled(s)) f.called++;
+    if (wasWon(s))    f.won++;
+    if (countsInEditor(s)) f.editor++;
+    if (s.calledAt && s.wonAt){
+      var days = (s.wonAt - s.calledAt) / 864e5;
+      if (days >= 0) f.cycleDays.push(days);
+    }
+  }
+  return f;
+}
+
+function pct(a, b){ return b > 0 ? Math.round(a / b * 100) : 0; }
+
+function renderFunnel(f){
+  setText('f-identified', f.identified);
+  setText('f-called',     f.called);
+  setText('f-won',        f.won);
+  setText('f-editor',     f.editor);
+
+  var top = f.identified || 1;
+  setBar('f-bar-1', 100);
+  setBar('f-bar-2', pct(f.called, top));
+  setBar('f-bar-3', pct(f.won,    top));
+  setBar('f-bar-4', pct(f.editor, top));
+
+  setHtml('f-conv-1', 'On the capacity map');
+  setHtml('f-conv-2', '<b>' + pct(f.called, f.identified) + '%</b> of identified');
+  setHtml('f-conv-3', '<b>' + pct(f.won, f.called) + '%</b> of called');
+  setHtml('f-conv-4', '<b>' + pct(f.editor, f.won) + '%</b> of sold');
+
+  // Secondary strip
+  var mw = f.kw / 1000;
+  setHtml('o-kw', (mw >= 10 ? mw.toFixed(0) : mw.toFixed(1)) + '<span class="unit">MW</span>');
+  setText('o-open', f.identified - f.called);
+
+  if (f.cycleDays.length){
+    var sum = 0; for (var i=0;i<f.cycleDays.length;i++) sum += f.cycleDays[i];
+    setText('o-cycle', Math.round(sum / f.cycleDays.length) + 'd');
+  } else {
+    setText('o-cycle', '—');
+  }
+
+  setDisplay('empty-note', SITES_LOADED && SITES.length === 0 ? 'flex' : 'none');
+}
+
+function setBar(id, p){
+  var el = document.getElementById(id);
+  if (el) el.style.width = Math.max(0, Math.min(100, p)) + '%';
+}
+function setHtml(id, h){ var el=document.getElementById(id); if(el) el.innerHTML = h; }
+
+/* ══════════════════════ REP DASHBOARD ══════════════════════ */
+function buildReps(list){
+  var byEmail = {};
+  for (var i=0;i<list.length;i++){
+    var s = list[i];
+    var key = s.repEmail || '(unassigned)';
+    if (!byEmail[key]){
+      byEmail[key] = { email:key, name:'', identified:0, called:0, won:0, editor:0, kw:0, last:null };
+    }
+    var r = byEmail[key];
+    if (!r.name && s.repName) r.name = s.repName;
+    r.identified++;
+    r.kw += s.capacityKw;
+    if (wasCalled(s)) r.called++;
+    if (wasWon(s))    r.won++;
+    if (countsInEditor(s)) r.editor++;
+    var stamps = [s.createdAt, s.calledAt, s.wonAt];
+    for (var j=0;j<stamps.length;j++){
+      if (stamps[j] && (!r.last || stamps[j] > r.last)) r.last = stamps[j];
+    }
+  }
+
+  var out = [];
+  for (var k in byEmail){
+    if (!byEmail.hasOwnProperty(k)) continue;
+    var r = byEmail[k];
+    // Prefer the team_members profile name over whatever the site doc carried.
+    var m = (typeof _memberByEmail === 'function') ? _memberByEmail(r.email) : null;
+    if (m && m.name) r.name = m.name;
+    if (!r.name) r.name = (typeof _pretty === 'function') ? _pretty(r.email) : r.email;
+    r.callRate  = pct(r.called, r.identified);
+    r.closeRate = pct(r.won, r.called);
+    out.push(r);
+  }
+  return out;
+}
+
+function sortReps(key){
+  if (REP_SORT.key === key) REP_SORT.dir *= -1;
+  else { REP_SORT.key = key; REP_SORT.dir = (key === 'name') ? 1 : -1; }
+  renderReps(buildReps(visibleSites()));
+}
+
+function renderReps(reps){
+  var k = REP_SORT.key, dir = REP_SORT.dir;
+  reps.sort(function(a,b){
+    var av, bv;
+    if (k === 'name'){ av = a.name.toLowerCase(); bv = b.name.toLowerCase(); }
+    else if (k === 'last'){ av = a.last ? a.last.getTime() : 0; bv = b.last ? b.last.getTime() : 0; }
+    else { av = a[k] || 0; bv = b[k] || 0; }
+    if (av < bv) return -1 * dir;
+    if (av > bv) return  1 * dir;
+    return 0;
+  });
+
+  setText('rep-count', reps.length);
+  setText('o-reps', reps.filter(function(r){ return r.email !== '(unassigned)'; }).length);
+
+  var body = document.getElementById('rep-body');
+  if (!body) return;
+
+  if (!reps.length){
+    body.innerHTML = '<tr><td colspan="8" class="tbl-empty">' +
+      (SITES_LOADED ? 'No sites in this window yet.' : 'Loading reps…') + '</td></tr>';
+    return;
+  }
+
+  var maxId = 0;
+  for (var i=0;i<reps.length;i++) maxId = Math.max(maxId, reps[i].identified);
+  var me = (typeof _meEmail === 'function') ? _meEmail() : '';
+
+  body.innerHTML = reps.map(function(r){
+    var isMe = r.email === me;
+    var unassigned = r.email === '(unassigned)';
+    return '<tr class="' + (isMe ? 'is-me' : '') + '">' +
+      '<td><div class="rep-cell">' +
+        '<div class="rep-av" style="' + (unassigned ? 'background:#C2CBD4' : '') + '">' +
+          escHtml(_initials(r.name)) + '</div>' +
+        '<div style="min-width:0">' +
+          '<div class="rep-nm">' + escHtml(r.name) +
+            (isMe ? ' <span class="rep-you">YOU</span>' : '') + '</div>' +
+          '<div class="rep-em">' + escHtml(unassigned ? 'no rep assigned' : r.email) + '</div>' +
+        '</div>' +
+      '</div></td>' +
+      '<td class="num">' + r.identified +
+        '<div class="mini-bar"><i style="width:' + pct(r.identified, maxId) + '%"></i></div></td>' +
+      '<td class="num">' + r.called + '</td>' +
+      '<td class="num">' + r.won + '</td>' +
+      '<td class="num">' + r.editor + '</td>' +
+      '<td class="num"><span class="rate ' + rateClass(r.callRate)  + '">' + r.callRate  + '%</span></td>' +
+      '<td class="num"><span class="rate ' + rateClass(r.closeRate) + '">' + r.closeRate + '%</span></td>' +
+      '<td class="num" style="font-size:11.5px;color:var(--cs-sub)">' + agoLabel(r.last) + '</td>' +
+    '</tr>';
+  }).join('');
+}
+
+function rateClass(p){ return p >= 50 ? 'hi' : (p >= 20 ? 'mid' : 'lo'); }
+
+function agoLabel(d){
+  if (!d) return '—';
+  var mins = Math.floor((Date.now() - d.getTime()) / 60000);
+  if (mins < 1)    return 'just now';
+  if (mins < 60)   return mins + 'm ago';
+  var hrs = Math.floor(mins/60);
+  if (hrs < 24)    return hrs + 'h ago';
+  var days = Math.floor(hrs/24);
+  if (days < 30)   return days + 'd ago';
+  return d.toLocaleDateString();
+}
+
+/* ══════════════════════ ACTIVITY FEED ══════════════════════ */
+function renderActivity(list){
+  var events = [];
+  for (var i=0;i<list.length;i++){
+    var s = list[i];
+    var who = s.repName || (typeof _pretty === 'function' ? _pretty(s.repEmail) : s.repEmail) || 'Someone';
+    if (s.createdAt) events.push({ t:s.createdAt, k:'identified',
+      html:'<b>' + escHtml(who) + '</b> identified <b>' + escHtml(s.name) + '</b>' });
+    if (s.calledAt)  events.push({ t:s.calledAt, k:'contacted',
+      html:'<b>' + escHtml(who) + '</b> made first contact at <b>' + escHtml(s.name) + '</b>' });
+    if (s.wonAt)     events.push({ t:s.wonAt, k:'won',
+      html:'<b>' + escHtml(who) + '</b> closed <b>' + escHtml(s.name) + '</b>' });
+  }
+  events.sort(function(a,b){ return b.t - a.t; });
+  events = events.slice(0, 12);
+
+  var el = document.getElementById('act-list');
+  if (!el) return;
+  if (!events.length){
+    el.innerHTML = '<div class="tbl-empty" style="padding:20px">' +
+      (SITES_LOADED ? 'No activity in this window.' : 'Loading…') + '</div>';
+    return;
+  }
+  el.innerHTML = events.map(function(e){
+    return '<div class="act-item">' +
+      '<div class="act-dot ' + e.k + '"></div>' +
+      '<div class="act-body"><div class="act-txt">' + e.html + '</div>' +
+      '<div class="act-when">' + agoLabel(e.t) + '</div></div></div>';
+  }).join('');
+}
+
+/* ══════════════════════ SITES TABLE ══════════════════════ */
+function renderSitesTable(list){
+  var rows = list.slice().sort(function(a,b){
+    var at = a.createdAt ? a.createdAt.getTime() : 0;
+    var bt = b.createdAt ? b.createdAt.getTime() : 0;
+    return bt - at;
+  });
+  setText('site-count', rows.length);
+
+  var body = document.getElementById('site-body');
+  if (!body) return;
+
+  if (!rows.length){
+    body.innerHTML = '<tr><td colspan="6" class="tbl-empty">' +
+      (SITES_LOADED ? 'No sites identified yet. Open the ComEd Capacity Map to start.' : 'Loading sites…') +
+      '</td></tr>';
+    setText('site-foot', '');
+    return;
+  }
+
+  var shown = rows.slice(0, 25);
+  body.innerHTML = shown.map(function(s){
+    var projCell = s.projectId
+      ? '<a href="/editor.html?id=' + encodeURIComponent(s.projectId) + '" style="color:var(--cs-accent);font-weight:600;text-decoration:none">' +
+        escHtml(PROJECT_IDS[s.projectId] || 'Open in editor') + '</a>'
+      : '<span style="color:var(--cs-sub)">—</span>';
+    var kw = s.capacityKw ? (s.capacityKw >= 1000
+      ? (s.capacityKw/1000).toFixed(1) + ' MW' : Math.round(s.capacityKw) + ' kW') : '—';
+    return '<tr>' +
+      '<td><div style="font-weight:600;color:var(--cs-navy)">' + escHtml(s.name) + '</div>' +
+        (s.address ? '<div style="font-size:11px;color:var(--cs-sub)">' + escHtml(s.address) + '</div>' : '') +
+      '</td>' +
+      '<td style="font-size:12px">' + escHtml(s.repName || _pretty(s.repEmail) || '—') + '</td>' +
+      '<td class="num">' + kw + '</td>' +
+      '<td><span class="spill ' + escHtml(s.status) + '">' + escHtml(s.status) + '</span></td>' +
+      '<td>' + projCell + '</td>' +
+      '<td class="num" style="font-size:11.5px;color:var(--cs-sub)">' + agoLabel(s.createdAt) + '</td>' +
+    '</tr>';
+  }).join('');
+
+  setText('site-foot', rows.length > 25
+    ? 'Showing 25 of ' + rows.length + ' sites.'
+    : 'Showing all ' + rows.length + ' site' + (rows.length === 1 ? '' : 's') + '.');
+}
+
+/* ══════════════════════ ORCHESTRATION ══════════════════════ */
+function renderAll(){
+  var list = visibleSites();
+  renderFunnel(computeFunnel(list));
+  renderReps(buildReps(list));
+  renderActivity(list);
+  renderSitesTable(list);
+}
+
+async function refreshAll(){
+  var btn = document.getElementById('refresh-btn');
+  if (btn) btn.disabled = true;
+  await Promise.all([ loadSites(), loadProjects() ]);
+  renderAll();
+  if (btn) btn.disabled = false;
+}
+/* ══════════════════ ACCOUNT SETTINGS ══════════════════ */
+function _providerId(){
+  try {
+    var u = currentUser || (auth && auth.currentUser);
+    if (u && u.providerData && u.providerData.length) return u.providerData[0].providerId;
+  } catch(e){}
+  return 'password';
+}
+
+function openAccount(){
+  var u = currentUser || (auth && auth.currentUser);
+  if (!u){ return; }
+  setText('acct-email', u.email || '—');
+  var wsName = (window.OMEGA_WORKSPACE && window.OMEGA_WORKSPACE.clientName) || '—';
+  setText('acct-ws', wsName);
+
+  // Profile: prefill display name + avatar from the saved member profile.
+  var myMember = _memberByEmail(_meEmail()) || {};
+  var savedName = (_myProfile && _myProfile.name) || myMember.name || (u.displayName || '');
+  document.getElementById('acct-display-name').value = savedName || '';
+  _acctPendingPhoto = null;   // reset any unsaved pick
+  renderAcctAvatar((_myProfile && _myProfile.photo) || myMember.photo || '', savedName || (u.email||''));
+  _profileMsg('', '');
+
+  var pid = _providerId();
+  var isGoogle = (pid === 'google.com');
+  setText('acct-provider', isGoogle ? 'Google' : 'Email & password');
+  document.getElementById('acct-pw-section').style.display   = isGoogle ? 'none' : 'block';
+  document.getElementById('acct-google-note').style.display  = isGoogle ? 'block' : 'none';
+
+  ['acct-cur','acct-new','acct-new2'].forEach(function(id){ var e=document.getElementById(id); if(e) e.value=''; });
+  _acctMsg('', '');
+  document.getElementById('acct-overlay').classList.add('show');
+}
+function closeAccount(){ document.getElementById('acct-overlay').classList.remove('show'); }
+function _acctMsg(text, kind){
+  var m = document.getElementById('acct-msg'); if(!m) return;
+  m.textContent = text || '';
+  m.className = 'acct-msg' + (kind ? (' ' + kind) : '');
+}
+function _profileMsg(text, kind){
+  var m = document.getElementById('acct-profile-msg'); if(!m) return;
+  m.textContent = text || '';
+  m.className = 'acct-msg' + (kind ? (' ' + kind) : '');
+}
+
+/* ── Avatar preview in the modal ── */
+var _acctPendingPhoto = null;   // a freshly picked (not yet saved) data URL
+function renderAcctAvatar(photo, nameOrEmail){
+  var box = document.getElementById('acct-av-preview'); if(!box) return;
+  var rm = document.getElementById('acct-av-remove');
+  if (photo){
+    box.style.background='none';
+    box.innerHTML = '<img src="'+escHtml(photo)+'" alt="">';
+    if (rm) rm.style.display='inline-block';
+  } else {
+    var email = _meEmail();
+    box.style.background = _avColor(email);
+    box.innerHTML = escHtml(_initials(nameOrEmail || email));
+    if (rm) rm.style.display='none';
+  }
+}
+
+/* ── Photo pick → downscale to ~128px square → data URL (kept small for Firestore) ── */
+function onPhotoPicked(ev){
+  var file = ev.target.files && ev.target.files[0];
+  if (!file) return;
+  if (file.size > 8*1024*1024){ _profileMsg('Image is too large (max 8MB before resizing).', 'err'); return; }
+  var reader = new FileReader();
+  reader.onload = function(e){
+    var img = new Image();
+    img.onload = function(){
+      var SIZE = 128;
+      var canvas = document.createElement('canvas');
+      canvas.width = SIZE; canvas.height = SIZE;
+      var ctx = canvas.getContext('2d');
+      // center-crop to square
+      var side = Math.min(img.width, img.height);
+      var sx = (img.width - side)/2, sy = (img.height - side)/2;
+      ctx.drawImage(img, sx, sy, side, side, 0, 0, SIZE, SIZE);
+      var dataUrl = canvas.toDataURL('image/jpeg', 0.82);
+      _acctPendingPhoto = dataUrl;
+      renderAcctAvatar(dataUrl, document.getElementById('acct-display-name').value);
+      _profileMsg('Photo ready — click Save profile to apply.', 'ok');
+    };
+    img.onerror = function(){ _profileMsg('Could not read that image.', 'err'); };
+    img.src = e.target.result;
+  };
+  reader.readAsDataURL(file);
+  ev.target.value = '';   // allow re-picking the same file
+}
+function removePhoto(){
+  _acctPendingPhoto = '__REMOVE__';
+  renderAcctAvatar('', document.getElementById('acct-display-name').value);
+  _profileMsg('Photo will be removed — click Save profile to apply.', 'ok');
+}
+
+/* ── Save display name + photo to the member doc ── */
+function saveProfile(){
+  var name = (document.getElementById('acct-display-name').value || '').trim();
+  if (!name){ _profileMsg('Enter a display name.', 'err'); return; }
+  if (!currentUser || !currentOrg || !db){ _profileMsg('You need to be signed in.', 'err'); return; }
+
+  var btn = document.getElementById('acct-profile-btn'); btn.disabled = true; _profileMsg('Saving…', '');
+  var id = currentOrg + '__' + _meEmail();
+  var payload = { orgId: currentOrg, email: _meEmail(), name: name,
+                  lastSeen: firebase.firestore.FieldValue.serverTimestamp() };
+  if (_acctPendingPhoto === '__REMOVE__') payload.photo = '';
+  else if (_acctPendingPhoto) payload.photo = _acctPendingPhoto;
+
+  db.collection('team_members').doc(id).set(payload, {merge:true}).then(function(){
+    // update local cache so the rest of the UI reflects it immediately
+    if (!_myProfile) _myProfile = {};
+    _myProfile.name = name;
+    if (_acctPendingPhoto === '__REMOVE__') _myProfile.photo = '';
+    else if (_acctPendingPhoto) _myProfile.photo = _acctPendingPhoto;
+    _acctPendingPhoto = null;
+    _profileMsg('Profile saved.', 'ok');
+    refreshGreeting();   // update the welcome line + topbar with the new name
+  })['catch'](function(e){
+    var msg = (e && e.code === 'permission-denied') ? 'Permission denied — check Firestore rules for team_members.' : ('Could not save: ' + (e && e.message ? e.message : 'unknown error'));
+    _profileMsg(msg, 'err');
+  }).then(function(){ btn.disabled = false; });
+}
+
+function changePassword(){
+  var cur  = (document.getElementById('acct-cur').value  || '');
+  var nw   = (document.getElementById('acct-new').value  || '');
+  var nw2  = (document.getElementById('acct-new2').value || '');
+
+  if (!cur){ _acctMsg('Enter your current password.', 'err'); return; }
+  if (nw.length < 6){ _acctMsg('New password must be at least 6 characters.', 'err'); return; }
+  if (nw !== nw2){ _acctMsg('New passwords do not match.', 'err'); return; }
+  if (nw === cur){ _acctMsg('New password must be different from the current one.', 'err'); return; }
+
+  var u = auth.currentUser;
+  if (!u || !u.email){ _acctMsg('You need to be signed in.', 'err'); return; }
+
+  var btn = document.getElementById('acct-pw-btn');
+  btn.disabled = true; _acctMsg('Updating…', '');
+
+  // Firebase requires a recent login to change a password → re-authenticate first.
+  var cred = firebase.auth.EmailAuthProvider.credential(u.email, cur);
+  u.reauthenticateWithCredential(cred).then(function(){
+    return u.updatePassword(nw);
+  }).then(function(){
+    _acctMsg('Password updated successfully.', 'ok');
+    ['acct-cur','acct-new','acct-new2'].forEach(function(id){ document.getElementById(id).value=''; });
+  })['catch'](function(err){
+    var code = err && err.code ? err.code : '';
+    var msg = 'Could not update password.';
+    if (code === 'auth/wrong-password' || code === 'auth/invalid-credential') msg = 'Current password is incorrect.';
+    else if (code === 'auth/weak-password') msg = 'New password is too weak — use at least 6 characters.';
+    else if (code === 'auth/too-many-requests') msg = 'Too many attempts. Try again in a few minutes.';
+    else if (code === 'auth/requires-recent-login') msg = 'For security, sign out and back in, then try again.';
+    else if (err && err.message) msg = err.message;
+    _acctMsg(msg, 'err');
+  }).then(function(){ btn.disabled = false; });
+}
+function openNewProjectModal(type) {
+  newProjType = type;
+  document.getElementById('np-type').value = type;
+  document.getElementById('new-proj-modal').classList.add('on');
+  setTimeout(()=>document.getElementById('np-name').focus(), 100);
+}
+function closeNewProjectModal() {
+  document.getElementById('new-proj-modal').classList.remove('on');
+}
+
+async function createProject() {
+  const name = document.getElementById('np-name').value.trim();
+  const addr = document.getElementById('np-addr').value.trim();
+  const type = document.getElementById('np-type').value;
+  const client = document.getElementById('np-client').value.trim();
+  if (!name) { alert('Please enter a project name.'); return; }
+
+  try {
+    const ref = await db.collection('projects').add({
+      uid: currentUser.uid,
+      orgId: currentOrg,   // tenant tag — enforced by Firestore security rules
+      ownerEmail: (currentUser.email||'').toLowerCase(),  // per-user scope key ("My Projects")
+      ownerName: _meName(),                                 // friendly owner label for tables
+      name, address: addr, type, client,
+      stage: 'candidate', // seed pipeline stage so the dashboard can roll it up
+      createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+      updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
+      elements: [], conduits: [], bessList: [], annotations: []
+    });
+    closeNewProjectModal();
+    openProject(ref.id);
+  } catch(e) {
+    alert('Error creating project: ' + e.message);
+  }
+}
+
+function openProject(id) {
+  // Pass the resolved tenant slug so the editor brands correctly on a fresh
+  // page load (window.OMEGA_WORKSPACE does NOT survive navigation).
+  var ws = window.OMEGA_WORKSPACE;
+  var slug = (ws && ws.allowedDomain) ? String(ws.allowedDomain).split('.')[0] : '';
+  var url = '/editor.html?id=' + encodeURIComponent(id);
+  if (slug) { url += '&org=' + encodeURIComponent(slug); }
+  window.location.href = url;
+}
+
+// ══════════ UTILS (UNCHANGED) ══════════
+function escHtml(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+// Close modal on backdrop click (UNCHANGED)
+document.getElementById('new-proj-modal').addEventListener('click', function(e) {
+  if (e.target === this) closeNewProjectModal();
+});
+/* ══════════════════════════════════════════════════════════════════════
+   SESSION STATE + APP CHROME
+   ══════════════════════════════════════════════════════════════════════ */
+var _teamUnsub   = [];
+var _teamMembers = [];    // [{email,name,photo}] — used to label reps
+var _myProfile   = null;  // { name, photo } for the signed-in user
+
+function _greetName(user) {
+  if (_myProfile && _myProfile.name) return _myProfile.name;
+  if (user && user.displayName) return user.displayName;
+  if (user && user.email) return user.email;
+  return 'there';
+}
+
+function refreshGreeting(user) {
+  user = user || currentUser || (auth && auth.currentUser);
+  if (!user) return;
+  var full  = _greetName(user);
+  var first = full.split(' ')[0];
+  var wn = document.getElementById('welcome-name');
+  if (wn) wn.textContent = 'Welcome back, ' + first;
+  var tn = document.getElementById('tb-name');
+  if (tn) tn.textContent = full;
+}
+
+function showApp(user) {
+  document.getElementById('auth-screen').style.display = 'none';
+  document.getElementById('app').style.display = 'block';
+
+  var ws = WORKSPACE || {};
+
+  var chipBox = document.getElementById('tb-client-chip');
+  if (chipBox){
+    var wsLogo = ws.logo || (ws.exportBrand && ws.exportBrand.logo) || '';
+    chipBox.innerHTML = wsLogo
+      ? '<img src="' + wsLogo + '" alt="' + escHtml(ws.clientName || '') + '" onerror="this.style.display=\'none\'">'
+      : '<span id="tb-client-logo" class="tb-client-txt">' + escHtml(ws.clientName || '') + '</span>';
+  }
+  var badge = document.getElementById('tb-ent-badge');
+  if (badge) badge.textContent = (ws.accountTier || 'Enterprise') + ' Account';
+
+  refreshGreeting(user);
+  var dateEl = document.getElementById('dash-date');
+  if (dateEl) dateEl.textContent = new Date().toLocaleDateString('en-US',
+    { weekday:'long', month:'long', day:'numeric', year:'numeric' });
+
+  var wrap = document.getElementById('tb-avatar-wrap');
+  var first0 = _greetName(user).split(' ')[0];
+  if (wrap){
+    wrap.innerHTML = user.photoURL
+      ? '<div id="tb-av-slot"><img class="tb-avatar" src="'+user.photoURL+'" onerror="this.style.display=\'none\'"></div>'
+      : '<div id="tb-av-slot"><div class="tb-avatar-fallback">'+(first0[0]||'?').toUpperCase()+'</div></div>';
+  }
+
+  setText('funnel-sub', 'Sites identified on the ComEd Capacity Map by the ' +
+    (ws.clientName || 'your') + ' team, by stage');
+
+  // Deep link from projects.html: ?new=1 opens the create-project modal.
+  try {
+    if (/[?&]new=1(&|$)/.test(window.location.search)) {
+      if (window.history && window.history.replaceState) {
+        window.history.replaceState({}, document.title, window.location.pathname);
+      }
+      setTimeout(function(){ openNewProjectModal('bess'); }, 60);
+    }
+  } catch(e){ /* non-fatal */ }
+}
+
+/* Members are loaded only to put a friendly name and avatar on each rep row —
+   there is no team hub in this portal. */
+function initTeam(){
+  _teamUnsub.forEach(function(u){ try{u();}catch(e){} });
+  _teamUnsub = [];
+  loadMyProfile(function(){ refreshGreeting(); });
+  registerMember();
+  watchMembers();
+}
+
+/* Members arriving after the first paint should refresh the rep labels. */
+function renderMembers(){
+  if (SITES_LOADED) renderReps(buildReps(visibleSites()));
+}
+
+/* ══════════════════════════════════════════════════════════════════════
+   TOOL ACCESS GATING
+   This tenant has exactly two tools. Anything not on the allowlist is
+   removed from the nav rather than shown behind an upgrade overlay —
+   there is nothing here to upgrade to.
+   ══════════════════════════════════════════════════════════════════════ */
+function applyToolLocks(){
+  var ws = WORKSPACE;
+  if (!ws) return;
+  var allow = ws.unlockedTools || ws.requiredTools || [];
+  if (!allow.length) return;
+  if (allow.indexOf('comed_capacity') < 0){
+    var t = document.getElementById('tab-comed');
+    if (t && t.parentNode) t.parentNode.removeChild(t);
+  }
+}
+
+/* ══════════════════════════════════════════════════════════════════════
+   BOOT
+   ══════════════════════════════════════════════════════════════════════ */
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', _initFirebase);
+} else {
+  _initFirebase();
+}
+</script>
+</body>
+</html>

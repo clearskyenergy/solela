@@ -23,7 +23,7 @@ index.html                    Dashboard — ComEd pipeline KPIs + sales rep boar
 projects.html                 Project list (unchanged apart from nav)
 config.js                     Firebase + Maps keys, tenant name
 vercel.json                   Rewrites for /editor.html and /comed-capacity.html
-firestore-comedsites.rules    Security rules for the comedSites collection
+firestore-comedsites.rules    Security rules for the sites collection
 clearsky-omega-mark-white.png Topbar mark
 ```
 
@@ -74,7 +74,7 @@ in one place and 14 in another.
 
 ### Sample data
 
-When `comedSites` is empty the dashboard renders 14 illustrative Cook County
+When `sites` is empty the dashboard renders 14 illustrative Cook County
 sites across 4 reps, behind an amber "Sample" ribbon. It disappears on the first
 real save. This follows the platform convention used in the other tenant
 deployments. To remove it permanently, delete the `SAMPLE_SITES` block near the
@@ -82,7 +82,7 @@ top of the dashboard script.
 
 ---
 
-## Data contract — `comedSites`
+## Data contract — `sites`
 
 **This collection does not exist yet.** The dashboard reads it; the ComEd
 Capacity tool must write it. Until the tool writes real rows, the dashboard will
@@ -149,7 +149,7 @@ The allowlist lives in **two** places and they must be kept in sync:
    `vercel.json` assumes it, mirroring how `/editor.html` is routed. If the tool
    lives elsewhere, change the destination there. If the URL is wrong the tab
    404s.
-2. **Wire the ComEd Capacity tool to write `comedSites`.** If it already tracks
+2. **Wire the ComEd Capacity tool to write `sites`.** If it already tracks
    status, calls and rep assignment under different field names, remapping the
    dashboard to those names is the better direction — it is a single normalize
    function.

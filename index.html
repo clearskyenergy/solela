@@ -426,7 +426,7 @@ window._omegaReady = function(){
    Scope of this deployment: Projects, BESS Site Map (editor), and the
    ComEd Capacity map. No marketplace, no tool catalog, no pro-forma suite.
 
-   The dashboard reads ONE collection — `comedSites` — which the ComEd
+   The dashboard reads ONE collection — `sites` — which the ComEd
    Capacity tool writes as reps work the map. See README.md for the field
    contract. Nothing here writes to that collection; this page is read-only.
    ══════════════════════════════════════════════════════════════════════ */
@@ -656,7 +656,7 @@ _initFirebase();
 
 <script>
 /* ══════════════════════════════════════════════════════════════════════
-   DASHBOARD — reads `comedSites`, derives the funnel and the rep board.
+   DASHBOARD — reads `sites`, derives the funnel and the rep board.
 
    FIELD CONTRACT (written by the ComEd Capacity tool; see README.md):
      orgId              string   tenant scope — required, matches security rules
@@ -689,7 +689,7 @@ STAGE_LABEL.lost = 'Lost';
 var IS_SAMPLE = false;
 
 /* ══════════════════════════════════════════════════════════════════════
-   SAMPLE PIPELINE — renders ONLY while `comedSites` is empty, behind the
+   SAMPLE PIPELINE — renders ONLY while `sites` is empty, behind the
    amber ribbon, and disappears the moment a real site is saved. Scoped to
    plausible ComEd / Cook County C&I hosting capacity so a demo reads true.
    Delete this block once the tool is writing live data.
@@ -822,7 +822,7 @@ function normalize(d, id){
 /* ══════════ LOAD ══════════ */
 function loadDashboard(){
   if (!db || !currentOrg){ render(SAMPLE_SITES.map(function(s,i){ return normalize(s,'s'+i); }), true); return; }
-  db.collection('comedSites').where('orgId','==',currentOrg).get()
+  db.collection('sites').where('orgId','==',currentOrg).get()
     .then(function(snap){
       var rows = [];
       snap.forEach(function(doc){ rows.push(normalize(doc.data(), doc.id)); });
@@ -834,7 +834,7 @@ function loadDashboard(){
       }
     })
     .catch(function(e){
-      console.error('comedSites read failed:', e);
+      console.error('sites read failed:', e);
       renderError();
     });
 }

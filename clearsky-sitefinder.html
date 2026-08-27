@@ -2759,29 +2759,75 @@
       return;
     }
     head("Locating\u2026", raw);
-    var url = "https://nominatim.openstreetmap.org/search?format=json&limit=1&countrycodes=us&q=" +
-      encodeURIComponent(raw);
-    var x = new XMLHttpRequest();
-    x.open("GET", url, true);
-    x.onreadystatechange = function () {
-      if (x.readyState !== 4) return;
-      var j = null;
-      try { j = JSON.parse(x.responseText); } catch (e) {}
-      if (!j || !j.length) { head("Not found", "No match for \u201c" + raw + "\u201d. Try a ZIP or a cross street."); return; }
-      var lat = +j[0].lat, lon = +j[0].lon;
-      var found = j[0].display_name || raw;
+
+    /* A LADDER, not a single attempt.
+
+       Nominatim answers "4343 S Michigan Ave, Chicago" and does not answer
+       "4343 S Michigan Ave Chicago, IL 60653" — the same address with more
+       information in it. That is not a bug in the address, it is how the
+       index matches, and one attempt made the tool look broken on addresses
+       Google resolves instantly.
+
+       Census goes first because it is the authority for US street addresses,
+       is free and unlimited, and returns a rooftop point rather than a
+       street interpolation. Then Nominatim, then progressively looser forms
+       of the same address. Each rung is a real place; the ZIP rung is last
+       because a ZIP centroid can be a mile from the building and everything
+       downstream — circuit, substation, score — is computed from the point. */
+    var attempts = [];
+    var txt = raw.trim();
+    var parts = txt.split(",").map(function (s) { return s.trim(); }).filter(Boolean);
+    attempts.push({ q: txt, kind: "exact" });
+    /* "4343 S Michigan Ave Chicago, IL 60653" -> "4343 S Michigan Ave, Chicago, IL 60653".
+       A missing comma between street and city is the single most common way
+       a typed address fails to match. */
+    var glued = txt.replace(/\s+(Chicago|Elmhurst|Naperville|Aurora|Joliet|Cicero|Berwyn|Evanston|Skokie|Oak Park|Rockford)\s*,/i,
+                            ", $1,");
+    if (glued !== txt) attempts.push({ q: glued, kind: "comma-repaired" });
+    if (!/\b(il|illinois)\b/i.test(txt)) attempts.push({ q: txt + ", IL, USA", kind: "state added" });
+    if (parts.length > 1) {
+      /* Drop the ZIP — Nominatim often fails on a ZIP that disagrees with its
+         own boundary data even when the street address is perfectly good. */
+      var noZip = txt.replace(/\s*\b\d{5}(-\d{4})?\b\s*$/, "").replace(/,\s*$/, "");
+      if (noZip !== txt) attempts.push({ q: noZip, kind: "without ZIP" });
+    }
+    var zip = (txt.match(/\b\d{5}\b/) || [])[0];
+    if (zip) attempts.push({ q: zip + ", IL, USA", kind: "ZIP centroid", approx: true });
+
+    var ai = 0;
+    (function rung() {
+      if (ai >= attempts.length) {
+        head("Not found",
+             "No match for \u201c" + raw + "\u201d after " + attempts.length +
+             " attempts. Try dropping the ZIP, or a cross street.");
+        return;
+      }
+      var a = attempts[ai++];
+      geocodeOne(a.q, "", "", function (hit) {
+        if (!hit) { rung(); return; }
+        landOn(hit.lat, hit.lon, raw, a, hit.src);
+      });
+    })();
+
+    function landOn(lat, lon, label, attempt, src) {
       map.setView([lat, lon], 16);
-      /* The probe asks ComEd about this point directly, so it does not wait
-         on the viewport polygon cache — that cache is for drawing, and it is
-         simplified. The layers still load underneath for the map itself. */
-      head("Reading the circuit\u2026", found);
-      viabilityAt(lat, lon, found, function (v) {
+      head("Reading the circuit\u2026", label);
+      /* A ZIP-centroid match is reported as one. Everything on the card is
+         computed from this point, so a rep has to know when it is the middle
+         of a postcode rather than the building. */
+      if (attempt.approx) {
+        head("Approximate location",
+             "Only the ZIP matched, so this pin is the centre of " + attempt.q +
+             " and may be a mile from the building. The circuit below is for " +
+             "that point, not necessarily for this address.");
+      }
+      viabilityAt(lat, lon, label, function (v) {
+        v.geoSrc = src; v.approxPin = !!attempt.approx;
         showViability(v, lat, lon);
         if (hasSource()) run(true);
       });
       LAY.attribIn(bounds(), function () {});
-    };
-    x.send();
+    }
   }
 
   /* ----------------------------------------------------------------- rep */

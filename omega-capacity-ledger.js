@@ -222,9 +222,15 @@
     else if (circuitKw < loadKw) { kw = circuitKw; binds = "circuit"; }
     else { kw = loadKw; binds = "load"; }
 
+    /* kWh is derived from the ROUNDED kW, not from the raw one. Rounding each
+       independently publishes "267 kW / 535 kWh" off a raw 267.49 — two
+       numbers side by side on the card that do not multiply. A rep checking
+       267 x 2 in their head finds 534 and stops trusting the card, which is a
+       bad trade for half a kilowatt-hour. */
+    var kwOut = kw == null ? null : Math.max(0, Math.round(kw));
     return {
-      kw: kw == null ? null : Math.max(0, Math.round(kw)),
-      kwh: kw == null ? null : Math.max(0, Math.round(kw * hours)),
+      kw: kwOut,
+      kwh: kwOut == null ? null : kwOut * hours,
       hours: hours,
       loadCeiling: loadKw == null ? null : Math.round(loadKw),
       circuitCeiling: circuitKw == null ? null : Math.round(circuitKw),

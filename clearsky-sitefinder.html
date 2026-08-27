@@ -20,10 +20,6 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Site Finder · ClearSky-OMEGA</title>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css"/>
-<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
-<script src="/config.js"></script>
 <style>
   :root{
     --bg:#f5f6f8;--panel:#fff;--panel2:#f0f2f5;--line:#dfe3e8;
@@ -308,6 +304,14 @@
   .setB h5{margin:0 0 6px;font:700 11px var(--mono);letter-spacing:.09em;
     text-transform:uppercase;color:var(--muted)}
   .setB p{margin:0 0 10px;font-size:11.5px;color:var(--muted);line-height:1.5}
+  .setKeyRow{display:flex;gap:6px;margin:8px 0 4px}
+  .setKeyRow input{flex:1;min-width:0;border:1px solid var(--line);border-radius:8px;
+    padding:8px 10px;font:inherit;font-size:13px;color:var(--ink);background:#fff}
+  .setKeyRow button{border:0;border-radius:8px;padding:8px 14px;font:inherit;
+    font-weight:600;font-size:13px;background:var(--accent);color:#fff;cursor:pointer}
+  .setKeyMsg{min-height:16px;font-size:12px;margin:2px 0 0}
+  .setKeyMsg.good{color:#1a7f4b}
+  .setKeyMsg.bad{color:#b4341f}
   .setSeg{display:flex;background:var(--panel2);border-radius:8px;padding:2px;gap:2px}
   .setSeg button{flex:1;border:0;background:transparent;color:var(--muted);
     font:600 12px var(--sans);padding:7px 4px;border-radius:6px;cursor:pointer}
@@ -323,31 +327,6 @@
   #setSrc{width:100%;height:32px;border:1px solid var(--line);border-radius:7px;
     background:#fff;padding:0 9px;font:400 13px var(--sans);outline:none}
   #setSrcNote{margin-top:9px}
-
-  /* ── sign-in gate ─────────────────────────────────────────────────────
-     Blocks the whole tool rather than letting somebody browse and then fail
-     on the first claim. A rep who has read a circuit as free, called the
-     customer, and only then discovered they were never signed in has already
-     done the damage this tool exists to prevent. */
-  #gate{position:fixed;inset:0;z-index:3000;background:rgba(26,39,51,.55);
-    backdrop-filter:blur(3px);display:flex;align-items:center;justify-content:center;padding:20px}
-  #gate[hidden]{display:none}
-  .gateBox{background:#fff;border-radius:14px;padding:26px 26px 22px;width:min(360px,100%);
-    box-shadow:0 24px 60px rgba(26,39,51,.3)}
-  .gateLogo{font-weight:700;font-size:14px;margin-bottom:14px}
-  .gateLogo span{color:var(--accent)}
-  .gateBox h2{margin:0 0 7px;font-size:19px;letter-spacing:-.01em}
-  .gateBox p{margin:0 0 18px;font-size:12.5px;color:var(--muted);line-height:1.5}
-  .gateBox label{display:block;font-size:11px;font-weight:600;color:var(--muted);margin-bottom:4px}
-  .gateBox input{width:100%;height:36px;border:1px solid var(--line);border-radius:8px;
-    padding:0 10px;font-size:13px;outline:none;margin-bottom:12px;font-family:inherit}
-  .gateBox input:focus{border-color:var(--accent)}
-  .gateBox .btn.pri{width:100%;height:36px}
-  .gLink{display:block;width:100%;margin-top:9px;border:0;background:transparent;
-    color:var(--muted);font-size:11.5px;cursor:pointer}
-  .gLink:hover{color:var(--accent)}
-  .gMsg{font-size:12px;margin-top:11px;line-height:1.45;min-height:16px}
-  .gMsg.err{color:var(--red)} .gMsg.ok{color:var(--green)}
 </style>
 </head>
 <body class="v-split">
@@ -369,7 +348,7 @@
   </div>
   <div class="spacer"></div>
   <span class="srcTag" id="srcTag">Sample data</span>
-  <div class="chip" id="repChip"><span class="av" id="repAv">—</span><span id="repName">Not signed in</span></div>
+  <div class="chip" id="repChip"><span class="av" id="repAv">—</span><span id="repName">Set your name</span></div>
 </div>
 
 <div id="filters">
@@ -432,22 +411,6 @@
 
 <div id="ledgerPane"></div>
 
-<div id="gate" hidden>
-  <div class="gateBox">
-    <div class="gateLogo">ClearSky<span>-OMEGA</span></div>
-    <h2>Site Finder</h2>
-    <p>Sign in with your work address. Every circuit you hold is stamped with it,
-       so the rest of the floor knows who to call before they touch that wire.</p>
-    <label for="gEmail">Email</label>
-    <input id="gEmail" type="email" autocomplete="username" placeholder="you@company.com">
-    <label for="gPass">Password</label>
-    <input id="gPass" type="password" autocomplete="current-password">
-    <button class="btn pri" id="gGo" type="button">Sign in</button>
-    <button class="gLink" id="gForgot" type="button">Forgot password</button>
-    <div class="gMsg" id="gMsg"></div>
-  </div>
-</div>
-
 <div id="legend">
   <div class="lgH">On the map</div>
   <label><input type="checkbox" id="lyHost" checked><span>Hosting capacity <b id="cHost">–</b></span></label>
@@ -468,6 +431,23 @@
 <div id="settings" role="dialog" aria-label="Settings">
   <div class="setH"><b>Settings</b><button id="setX" aria-label="Close">&#215;</button></div>
   <div class="setB">
+
+    <section id="setTileSec">
+      <h5>Basemap key</h5>
+      <p>CARTO now requires a free key for map tiles. Without one every tile is
+         stamped &ldquo;API KEY REQUIRED&rdquo;. Get one at
+         <a href="https://carto.com/basemaps/apikey" target="_blank" rel="noopener">carto.com/basemaps/apikey</a>
+         &mdash; it is free, there is no approval queue, and it covers 5 million
+         tiles a month. Paste it here and the map redraws immediately.</p>
+      <div class="setKeyRow">
+        <input type="text" id="setTileKey" placeholder="Paste your CARTO key" autocomplete="off" spellcheck="false">
+        <button id="setTileSave">Save</button>
+      </div>
+      <p id="setTileMsg" class="setKeyMsg"></p>
+      <p><em>Saved in this browser only. For every user to get it, a developer
+         should set <code>window.CS_TILE_KEY</code> in config.js once &mdash; but
+         this field is enough to go live.</em></p>
+    </section>
 
     <section>
       <h5>Circuit product</h5>
@@ -520,6 +500,7 @@
 <script src="omega-capacity-ledger.js"></script>
 <script src="omega-comed-layers.js"></script>
 <script src="omega-listings-source.js"></script>
+<script src="omega-comed-listings.js"></script>
 <script>
 /* ==========================================================================
    Site Finder — application layer
@@ -542,26 +523,164 @@
   };
 
   /* ------------------------------------------------------------------ map */
-  var map = L2().setView([41.8500, -87.7100], 14);
+  /* Opening view. Chicago is the default because that is where the ComEd
+     capacity data is, but a tenant outside the territory should not have the
+     tool open five states away from their book. Set window.CS_HOME in
+     omega-brand.js or config.js as [lat, lon, zoom], or pass ?at=lat,lon,zoom
+     for a one-off. */
+  var HOME = window.CS_HOME ||
+    (function (m) { return m ? [+m[1], +m[2], +(m[3] || 14)] : null; })
+      (location.search.match(/[?&]at=(-?[\d.]+),(-?[\d.]+)(?:,(\d+))?/)) ||
+    [41.8500, -87.7100, 14];
+  var map = L2().setView([HOME[0], HOME[1]], HOME[2] || 14);
   /* Top-right: the rail floats over the top-left corner now that the map is
      the background, and the default control sat underneath it. */
   function L2() {
     return window.L.map("map", { zoomControl: false, preferCanvas: true });
   }
   window.L.control.zoom({ position: "topright" }).addTo(map);
-  window.L.tileLayer("https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png", {
-    maxZoom: 19, attribution: "&copy; OpenStreetMap &copy; CARTO"
-  }).addTo(map);
+  /* CARTO's raster basemaps now require an API key. Without one every tile
+     comes back stamped "API KEY REQUIRED" — the map still works, but the
+     product looks broken in exactly the screenshot that ends up in a deck.
+     The key is free (5M tile requests a month, no approval queue) from
+     carto.com/basemaps/apikey.
+
+     Three ways to supply it, in priority order, so that going live never
+     depends on someone being able to edit a file:
+       1. window.CS_TILE_KEY in config.js — every user, set once, the proper fix
+       2. ?tilekey= on the URL — a one-off check
+       3. the Settings panel — saved in this browser, enough to ship today
+
+     It is not a secret and there is nowhere to hide it in a static page, so
+     it sits in config rather than pretending otherwise. The raster service is
+     also being retired; when it goes, the move is MapLibre against the vector
+     style, which is more than a one-line change and should be planned. */
+  function savedTileKey() {
+    try { return window.localStorage.getItem("cs.tileKey") || ""; }
+    catch (e) { return ""; }          /* private mode, or storage disabled */
+  }
+  var TILE_KEY = window.CS_TILE_KEY ||
+                 (location.search.match(/[?&]tilekey=([^&]+)/) || [])[1] ||
+                 savedTileKey() || "";
+  var tiles = null;
+  function drawTiles() {
+    if (tiles) { map.removeLayer(tiles); tiles = null; }
+    tiles = window.L.tileLayer(
+      "https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png" +
+        (TILE_KEY ? "?key=" + encodeURIComponent(TILE_KEY) : ""),
+      { maxZoom: 19, subdomains: "abcd",
+        attribution: "&copy; OpenStreetMap &copy; CARTO" }
+    );
+    tiles.addTo(map);
+    tiles.bringToBack();
+  }
+  drawTiles();
+  if (!TILE_KEY && window.console) {
+    console.warn("clearsky-sitefinder: no CARTO basemap key. Tiles will be " +
+                 "watermarked 'API KEY REQUIRED'. Settings \u2192 Basemap key, " +
+                 "or set window.CS_TILE_KEY. Free key at carto.com/basemaps/apikey");
+  }
   var markerLayer = window.L.layerGroup().addTo(map);
   var MARKERS = {};
 
   /* ------------------------------------------------------------- provider
-     Demo until a contract exists. Switching source is one line — see the
-     README for what each provider needs before it can be turned on. */
-  SRC.use("demo");
-  function isSample() { return !!(SRC.active && SRC.active.sample); }
+     Real data or nothing. The demo provider fabricates addresses, owners,
+     building sizes and sale prices; next to a genuinely live capacity map
+     that is indistinguishable from a result, and a rep who calls one has
+     called a building that does not exist.
 
-  /* =========================================================== the search */
+     So the fallback is NO provider rather than sample data. The tool still
+     works — the capacity map, the circuit ledger, the claims and the address
+     lookup are all real and none of them need a property list. What is
+     switched off is the browsable prospect list, until a county's parcels
+     are actually harvested.
+
+     Set window.CS_ALLOW_DEMO = true in config.js to bring sample data back
+     for a screenshot or a UI review. It is deliberately opt-in and it is
+     deliberately not the default. */
+  var HAS_REAL = !!(SRC.providers.comed || SRC.providers.harvest ||
+                    SRC.providers.propertyshark || SRC.providers.crexi);
+  if (SRC.providers.comed) SRC.use("comed");
+  else if (SRC.providers.harvest) SRC.use("harvest");
+  else if (window.CS_ALLOW_DEMO && SRC.providers.demo) SRC.use("demo");
+  else SRC.active = null;
+  function isSample() { return !!(SRC.active && SRC.active.sample); }
+  function hasSource() { return !!SRC.active; }
+
+  /* ------------------------------------------------- single-site viability
+     An address is not a viewport. Panning the map to a geocoded point and
+     re-running a bbox search answers "what is near here", which is a
+     different question from "can I put a battery HERE" — and when there is
+     no parcel list it answers nothing at all.
+
+     This reads the one point: which circuit covers it, what the circuit is
+     rated for, what the queue has already taken, what our own ledger has
+     claimed, and what is therefore left. Every number comes from a source
+     already on the page — LAY.feederAt for the circuit, L.feederState for
+     the claims, L.sizeAt for the ceilings. Nothing new is modelled here. */
+  function viabilityAt(lat, lon, label) {
+    var f = LAY.feederAt(lat, lon);
+    if (!f) {
+      return { ok: false, key: "offterritory", label: label,
+               headline: "Outside ComEd's mapped circuits",
+               why: "No ComEd hosting-capacity polygon covers this point. It is " +
+                    "either outside the service territory or on a circuit ComEd " +
+                    "does not publish. Interconnection here starts with a call to " +
+                    "the utility, not with this map." };
+    }
+    var cap = LAY.capacityOf(f) || {};
+    var fid = f.feeder || null;
+    if (fid && cap.nameplate != null) {
+      L.setFeeder(fid, { nameplate: cap.nameplate, queue: cap.queue || 0, sub: f.sub || "" });
+    }
+    var st = L.feederState(fid);
+    var cs = L.circuitStatus(st);
+    /* No building load for a bare address — the circuit ceiling is the only
+       one that binds, and that is said out loud rather than presented as if
+       the customer's own peak had been considered. */
+    var sz = L.sizeAt({ feederId: fid, hours: ST.hours || 2 });
+
+    return {
+      ok: st.known && st.sellable > 0,
+      key: cs.key, label: label,
+      feederId: fid, sub: f.sub || "",
+      state: st, status: cs, size: sz,
+      headline: !st.known
+        ? "Circuit found, capacity not published"
+        : st.sellable > 0
+          ? Math.round(st.sellable).toLocaleString() + " kW available on this circuit"
+          : "No capacity left on this circuit",
+      why: cs.note
+    };
+  }
+
+  /* The queue is the thing that most often kills a deal quietly, so it gets
+     its own sentence rather than being a row in a table. */
+  function queueLine(st) {
+    if (!st.known) return "";
+    if (!st.queue) return "Nothing filed ahead of you on this circuit.";
+    var pct = st.nameplate > 0 ? Math.round(100 * st.queue / st.nameplate) : 0;
+    return Math.round(st.queue).toLocaleString() + " kW is already held by other " +
+      "developers' interconnection applications \u2014 " + pct + "% of the circuit. " +
+      (st.nameplate - st.queue <= 0
+        ? "That alone consumes the circuit; there is nothing to size against."
+        : "Your battery is sized against what is left after that, not against " +
+          "the headline " + Math.round(st.nameplate).toLocaleString() + " kW.");
+  }
+
+  function ourClaimsLine(st) {
+    if (!st.known) return "";
+    var n = st.allocations.length;
+    if (!n) return "No one on your team has claimed capacity here yet.";
+    return n + (n === 1 ? " claim" : " claims") + " from your own team on this " +
+      "circuit: " + Math.round(st.firm).toLocaleString() + " kW firm and " +
+      Math.round(st.soft).toLocaleString() + " kW on soft hold. " +
+      "Anything you size here comes out of what is left after those." +
+      (st.oversubscribed
+        ? " This circuit is already oversubscribed by " +
+          Math.round(st.overBy).toLocaleString() + " kW."
+        : "");
+  }
 
   function bounds() {
     var b = map.getBounds();
@@ -574,6 +693,18 @@
 
   function run(force) {
     if (ST.busy) return;
+    /* No property source is a normal state, not an error. Say what the tool
+       still does rather than showing a failure — the capacity map, the
+       circuit ledger and the address lookup all work without a parcel list. */
+    if (!hasSource()) {
+      head("No property list on this tenant",
+           "Parcels have not been harvested for this territory yet, so there is " +
+           "nothing to browse. Everything else works: search an address above " +
+           "for a full circuit read on that site, turn on the capacity layers, " +
+           "or open the circuit ledger.");
+      ST.rows = []; render();
+      return;
+    }
     /* A hidden or unsized map pane reports a zero-area viewport. Searching it
        returns nothing and would wipe the results the rep is reading. */
     var b0 = bounds();
@@ -598,6 +729,11 @@
       }
       ingest(rows || []);
       render();
+      /* A provider that partly failed says so on the header. A short list
+         that looks complete is the failure mode this whole tool exists to
+         avoid — a rep reads an empty corridor as no opportunity. */
+      var note = SRC.active && SRC.active.lastNote;
+      if (note) document.getElementById("resS").textContent += " " + note;
     });
   }
 
@@ -611,11 +747,24 @@
       var r = rows[i];
       if (!r || r.lat == null || r.lon == null) continue;
 
-      if (!r.feederId) {
+      /* Real circuit first: the hosting polygons the map is shaded with are
+         already in memory, so this is a point-in-polygon, not a query. */
+      if (!r.feederId && LAY && LAY.feederAt) {
+        var hit = LAY.feederAt(r.lat, r.lon), cap0 = hit ? LAY.capacityOf(hit) : null;
+        if (cap0 && cap0.nameplate != null) {
+          r.feederId = cap0.feederId; r.sub = r.sub || cap0.sub;
+          r.nameplate = cap0.nameplate; r.queue = cap0.queue;
+        }
+      }
+      /* Only sample data gets a synthetic circuit. A real parcel with no
+         polygon over it keeps a blank feeder and says so on the card — a
+         made-up circuit id under real data is a number a rep will quote. */
+      if (!r.feederId && isSample()) {
         var f = SRC.demoFeederFor(r.lat, r.lon);
         r.feederId = f.feederId; r.sub = r.sub || f.sub;
       }
-      if (L.getFeeder(r.feederId) == null) {
+      if (!r.feederId) { r.feederId = "\u2014"; r.noCircuit = true; }
+      if (L.getFeeder(r.feederId) == null && !r.noCircuit) {
         var cap = r.nameplate != null
           ? { nameplate: r.nameplate, queue: r.queue || 0 }
           : SRC.demoCapacityFor(r.feederId);
@@ -636,7 +785,12 @@
 
      Collapsing them into one number is how a proposal ends up promising
      900 kW on a circuit with 200 kW left. */
-  var EUI_LF = { "Warehouse":0.38,"Industrial":0.55,"Manufacturing":0.60,"Cold Storage":0.72,
+  /* Load factors come from the shared table so the page, the demo provider
+     and the ComEd provider cannot disagree about how a type converts annual
+     kWh into a peak. The local literal is only a fallback for a host that has
+     an older omega-listings-source.js on it. */
+  var EUI_LF = (window.OmegaListings && window.OmegaListings.EUI_LF) ||
+               { "Warehouse":0.38,"Industrial":0.55,"Manufacturing":0.60,"Cold Storage":0.72,
                  "Flex":0.50,"Retail":0.45,"Office":0.50,"Data Center":0.85,
                  "Institutional":0.42,"Multifamily":0.55,"Vacant Land":0,"Other":0.50 };
   var DEMAND_LO = 8, DEMAND_HI = 14;   /* $/kW-month, ComEd C&I delivery + capacity */
@@ -738,9 +892,16 @@
         layNote(notes.join(" "));
       });
     if (document.getElementById("lyCI").checked)
-      LAY.refreshCI(function (n) {
-        layCount("cCI", n);
-        if (n === -1) { notes.push("Zoom to 13+ for parcels."); layNote(notes.join(" ")); }
+      LAY.refreshCI(function (n, err) {
+        /* Parcels arrive as one bundle per county, so a pan across a county
+           line can lose a shard while the rest of the map draws normally.
+           The count keeps reporting what DID draw and the note names what did
+           not — a badge reading "!" over a map with parcels on it is less
+           honest than a number plus the county that is missing from it. */
+        layCount("cCI", n, err && !(n > 0) ? err : null);
+        if (err) notes.push(err.message);
+        if (n === -1) notes.push("Zoom to 13+ for parcels.");
+        layNote(notes.join(" "));
       });
     if (document.getElementById("lyILS").checked)
       LAY.refreshILS(function (n) { layCount("cILS", n); });
@@ -757,10 +918,16 @@
       });
     };
     document.getElementById("lyCI").onchange = function () {
-      LAY.ci(this.checked, function (n, err) {
-        layCount("cCI", n, err);
-        if (err) layNote("ci-industrial.js is not deployed on this tenant.");
+      var on = this.checked;
+      LAY.ci(on, function (n, err) {
+        layCount("cCI", n, err && !(n > 0) ? err : null);
+        /* The error says which county shards are missing, or that no bundle
+           is deployed at all. Naming one file here was true when the parcels
+           were a single ci-industrial.js and is a wrong answer now — the
+           tenant may have twenty-four counties working and one absent. */
+        if (err) layNote(err.message);
         else if (n === -1) layNote("Zoom to 13+ for parcels.");
+        else if (on) layNote("");
       });
     };
     document.getElementById("lyILS").onchange = function () {
@@ -787,6 +954,36 @@
     var panel = document.getElementById("settings");
     document.getElementById("setOpen").onclick = function () { panel.className = "open"; };
     document.getElementById("setX").onclick = function () { panel.className = ""; };
+
+    /* Basemap key. Hidden entirely when a developer has already set
+       window.CS_TILE_KEY, because then it is not this person's problem. */
+    var keySec = document.getElementById("setTileSec");
+    if (window.CS_TILE_KEY) {
+      keySec.style.display = "none";
+    } else {
+      var keyIn = document.getElementById("setTileKey");
+      var keyMsg = document.getElementById("setTileMsg");
+      keyIn.value = TILE_KEY;
+      if (TILE_KEY) { keyMsg.className = "setKeyMsg good"; keyMsg.textContent = "Key saved. Map tiles are unwatermarked."; }
+      document.getElementById("setTileSave").onclick = function () {
+        var v = keyIn.value.replace(/\s+/g, "");
+        try {
+          if (v) window.localStorage.setItem("cs.tileKey", v);
+          else window.localStorage.removeItem("cs.tileKey");
+        } catch (e) {
+          keyMsg.className = "setKeyMsg bad";
+          keyMsg.textContent = "This browser will not let the page save it. " +
+            "Add ?tilekey=" + v + " to the address instead.";
+          return;
+        }
+        TILE_KEY = v;
+        drawTiles();
+        keyMsg.className = "setKeyMsg good";
+        keyMsg.textContent = v
+          ? "Saved. If the watermark is still there, hard-refresh \u2014 the tiles are cached."
+          : "Key cleared. Tiles will be watermarked again.";
+      };
+    }
 
     var segs = document.querySelectorAll("#setUse button");
     for (var i = 0; i < segs.length; i++) segs[i].onclick = (function (b) { return function () {
@@ -856,6 +1053,7 @@
   function srcNote() {
     var P = SRC.active, e = document.getElementById("setSrcNote");
     if (!P || !e) return;
+    if (P.note) { e.textContent = P.note; return; }
     e.textContent = P.sample
       ? "Deterministic sample data. The same viewport returns the same properties every time, so a demo never reshuffles itself in front of a customer."
       : P.url ? ("Reads " + P.url + ", built offline by the harvest pipeline.")
@@ -924,7 +1122,8 @@
       if (rows[i].claims.length) claimed++;
       if ((rows[i].circ.sellable || 0) <= 0) blocked++;
     }
-    head(rows.length.toLocaleString() + " sites" + (rows.length < ST.rows.length ? " of " + ST.rows.length : ""),
+    head(rows.length.toLocaleString() + (rows.length === 1 ? " site" : " sites") +
+         (rows.length < ST.rows.length ? " of " + ST.rows.length : ""),
       claimed
         ? claimed + " sit on a circuit somebody has already claimed" +
           (blocked ? ", and " + blocked + " have nothing left to sell." : ".")
@@ -1177,6 +1376,67 @@
     document.getElementById("drawer").className = "open";
     wireDrawer(r);
   }
+  /* Renders a searched ADDRESS in the same drawer a parcel uses, so a rep
+     reads one layout whether the site came off a list or out of the search
+     box. It reuses the drawer's circuit block by handing it a record shaped
+     like a property with no building on it. */
+  function showViability(v, lat, lon) {
+    var short = String(v.label).split(",").slice(0, 2).join(",");
+    head(v.headline, v.why);
+    if (!v.feederId) {
+      document.getElementById("dAddr").textContent = short;
+      document.getElementById("dSub").textContent = "No mapped circuit at this point";
+      document.getElementById("dBody").innerHTML =
+        '<div class="sec"><p class="note">' + esc(v.why) + '</p></div>';
+      document.getElementById("drawer").className = "open";
+      return;
+    }
+    var rec = {
+      id: "addr:" + lat.toFixed(5) + "," + lon.toFixed(5),
+      addr: short, city: "", state: "", zip: "",
+      lat: lat, lon: lon,
+      type: "Site lookup", subtype: "Address search \u00b7 no building record",
+      sqft: null, lotAcres: null, annualKwh: null,
+      owner: { name: "", phone: "", email: "", mailing: "" },
+      photos: [], assessedValue: null, lastSale: { date: "", price: null },
+      feederId: v.feederId, sub: v.sub,
+      nameplate: v.state.nameplate, queue: v.state.queue,
+      circ: v.state, sz: v.size, src: "lookup"
+    };
+    ST.sel = rec;
+    document.getElementById("dAddr").textContent = short;
+    document.getElementById("dSub").textContent =
+      "Circuit " + v.feederId + (v.sub ? "  \u00b7  " + v.sub : "");
+    document.getElementById("dBody").innerHTML =
+      '<div class="sec">' +
+        '<div class="hero"><div class="big">' +
+          (v.size.kw == null ? "&mdash;" : fmt(v.size.kw)) + ' <small>kW</small></div>' +
+        '<div class="cap">' + esc(v.headline) + '</div></div>' +
+        /* Said plainly: no building means no load ceiling, and the number
+           above is what the WIRE allows, not what a customer's peak
+           justifies. Presenting a circuit ceiling as a battery size is how a
+           proposal promises a battery three times the load it can shave. */
+        '<p class="note">This is what the circuit will accept, not a sized ' +
+        'battery. There is no building record at this address, so nothing here ' +
+        'accounts for the customer\u2019s own peak demand \u2014 which is usually ' +
+        'the smaller of the two and usually the one that binds. Pull a bill or ' +
+        'an interval file before quoting.</p>' +
+      '</div>' +
+      '<div class="sec"><h4>Other developers in the queue</h4>' +
+        '<p class="note">' + esc(queueLine(v.state)) + '</p></div>' +
+      '<div class="sec"><h4>Your team\u2019s claims on this circuit</h4>' +
+        '<p class="note">' + esc(ourClaimsLine(v.state)) + '</p></div>' +
+      '<div class="sec"><h4>Nearest substation</h4>' +
+        '<p class="note">' + (v.sub
+          ? esc(v.sub) + ' feeds this circuit. ComEd publishes the substation ' +
+            'name but not its location, so the distance to it is not something ' +
+            'this map can measure yet.'
+          : 'ComEd does not name a substation for this circuit.') + '</p></div>' +
+      drawerHtml(rec);
+    document.getElementById("drawer").className = "open";
+    wireDrawer(rec);
+  }
+
   function closeDrawer() {
     document.getElementById("drawer").className = "";
     ST.sel = null;
@@ -1351,7 +1611,7 @@
       var kw = +document.getElementById("rKw").value;
       var status = document.getElementById("rSt").value;
       var note = document.getElementById("rNote").value;
-      if (!ST.rep) { say("Sign in first \u2014 a claim with nobody's name on it is not a claim.", "err"); showGate(true); return; }
+      if (!ST.rep) { say("Set your name in the top right first \u2014 a claim with no owner is not a claim.", "err"); return; }
       L.reserve({
         feederId: r.feederId, siteId: r.id, address: r.addr, lat: r.lat, lon: r.lon,
         kw: kw, status: status, note: note, rep: ST.rep, hours: 2
@@ -1571,21 +1831,30 @@
       var j = null;
       try { j = JSON.parse(x.responseText); } catch (e) {}
       if (!j || !j.length) { head("Not found", "No match for \u201c" + raw + "\u201d. Try a ZIP or a cross street."); return; }
-      map.setView([+j[0].lat, +j[0].lon], 15);
-      run(true);
+      var lat = +j[0].lat, lon = +j[0].lon;
+      var found = j[0].display_name || raw;
+      map.setView([lat, lon], 16);
+      /* Circuits for the point first. feederAt reads the hosting cache, so
+         the polygon has to be in it before the answer means anything. */
+      head("Reading the circuit\u2026", found);
+      LAY.hostingIn(bounds(), function () {
+        showViability(viabilityAt(lat, lon, found), lat, lon);
+        if (hasSource()) run(true);
+      });
     };
     x.send();
   }
 
   /* ----------------------------------------------------------------- rep */
-  /* The chip reports who is signed in; it does not set it. A typed name
-     survives sign-out and follows the next person to sit down, and "held by
-     Dana" being wrong on a lock other people rely on is not a cosmetic bug. */
   document.getElementById("repChip").onclick = function () {
-    if (!fbUser) { showGate(true); return; }
-    if (window.confirm("Sign out of Site Finder?")) firebase.auth().signOut();
+    var n = window.prompt("Your name. It is stamped on every claim you make, so the team knows who to call.", ST.rep || "");
+    if (n == null) return;
+    ST.rep = n.trim();
+    document.getElementById("repName").textContent = ST.rep || "Set your name";
+    document.getElementById("repAv").textContent = ST.rep
+      ? ST.rep.split(/\s+/).slice(0, 2).map(function (w) { return w.charAt(0).toUpperCase(); }).join("")
+      : "\u2014";
   };
-
 
   /* -------------------------------------------------------------- export */
   document.getElementById("expCsv").onclick = function () {
@@ -1625,118 +1894,33 @@
      Optional. Without it the ledger still works, but claims live only in
      this tab — which for a tool whose entire job is stopping two reps from
      colliding, is worth saying out loud rather than failing quietly. */
-  /* ══════════════════════════════════════════════════════════════════════
-     AUTH
-
-     The gate blocks the whole tool, not just the claim button. A rep who has
-     read a circuit as free, called the customer and only then discovered they
-     were never signed in has already done the damage this exists to prevent.
-
-     REP is derived from the token and is NOT typeable. The old free-text
-     prompt meant a name survived sign-out and followed whoever sat down next,
-     and "held by Dana" would then be wrong on a lock other people rely on.
-     ══════════════════════════════════════════════════════════════════════ */
-  var fbDb = null, fbUser = null;
-
-  function fbConfig() {
-    /* Tenant portals ship /config.js with CLEARSKY_CONFIG; the standalone
-       deploy may set FIREBASE_CONFIG. Accept either rather than making every
-       tenant add a second file. */
-    if (window.CLEARSKY_CONFIG && window.CLEARSKY_CONFIG.firebase) return window.CLEARSKY_CONFIG.firebase;
-    if (window.FIREBASE_CONFIG) return window.FIREBASE_CONFIG;
-    return null;
-  }
-
-  function gateMsg(t, cls) {
-    var e = document.getElementById("gMsg");
-    if (e) { e.textContent = t || ""; e.className = "gMsg" + (cls ? " " + cls : ""); }
-  }
-  function showGate(on) { document.getElementById("gate").hidden = !on; }
-
-  function setRep(user) {
-    fbUser = user || null;
-    ST.rep = user ? (user.displayName || user.email || "") : "";
-    var nameEl = document.getElementById("repName"), avEl = document.getElementById("repAv");
-    nameEl.textContent = ST.rep || "Not signed in";
-    avEl.textContent = ST.rep
-      ? ST.rep.replace(/@.*/, "").split(/[\s._-]+/).slice(0, 2)
-          .map(function (w) { return (w.charAt(0) || "").toUpperCase(); }).join("") || "?"
-      : "\u2014";
-  }
-
   function connect() {
-    var cfg = fbConfig();
-    if (!window.firebase || !cfg) { localMode("Firebase is not configured on this deployment."); return; }
+    if (!window.firebase || !window.firebase.apps) { localMode(); return; }
     try {
-      if (!firebase.apps.length) firebase.initializeApp(cfg);
-      fbDb = firebase.firestore();
-    } catch (e) { localMode(e.message); return; }
-
-    firebase.auth().onAuthStateChanged(function (u) {
-      if (!u) { setRep(null); showGate(true); localMode(); return; }
-      showGate(false);
-      setRep(u);
-      L.attach(fbDb, ORG, function (err) {
-        if (err) {
-          /* Read refused is almost always the rules block missing or the org
-             not matching, and it is worth naming which rather than falling
-             back to a silent local ledger. */
-          localMode("Claims could not be read for " + ORG + " \u2014 " +
-                    (err.code || err.message) + ".");
-          return;
-        }
-        var t = document.getElementById("srcTag");
-        t.textContent = "Shared ledger \u00b7 " + ORG;
-        t.style.cssText = "color:#2ea043;background:#eef8f0;border-color:#c6e6cd";
-        t.title = "Claims apply to everyone in " + ORG + " the moment they save.";
-        refreshAll(ST.sel);
+      if (!firebase.apps.length && window.FIREBASE_CONFIG) firebase.initializeApp(window.FIREBASE_CONFIG);
+      if (!firebase.apps.length) { localMode(); return; }
+      var db = firebase.firestore();
+      firebase.auth().onAuthStateChanged(function (u) {
+        if (!u) { localMode(); return; }
+        L.attach(db, ORG, function (err) {
+          if (err) { localMode(); return; }
+          document.getElementById("srcTag").textContent = "Shared ledger";
+          document.getElementById("srcTag").style.cssText =
+            "color:#2ea043;background:#eef8f0;border-color:#c6e6cd";
+          refreshAll(ST.sel);
+        });
       });
-    });
-
-    document.getElementById("gGo").onclick = signIn;
-    document.getElementById("gPass").addEventListener("keydown", function (e) {
-      if (e.key === "Enter") signIn();
-    });
-    document.getElementById("gForgot").onclick = function () {
-      var em = document.getElementById("gEmail").value.trim();
-      if (!em) { gateMsg("Enter your email first, then press Forgot password.", "err"); return; }
-      firebase.auth().sendPasswordResetEmail(em)
-        .then(function () { gateMsg("Reset link sent to " + em + ".", "ok"); })
-        .catch(function (e) { gateMsg(e.message, "err"); });
-    };
+    } catch (e) { localMode(); }
   }
-
-  function signIn() {
-    var em = document.getElementById("gEmail").value.trim();
-    var pw = document.getElementById("gPass").value;
-    if (!em || !pw) { gateMsg("Email and password are both needed.", "err"); return; }
-    gateMsg("Signing in\u2026");
-    firebase.auth().signInWithEmailAndPassword(em, pw)
-      .then(function () { gateMsg(""); })
-      .catch(function (e) {
-        gateMsg(e.code === "auth/invalid-credential" || e.code === "auth/wrong-password"
-          ? "That email and password do not match an account."
-          : e.message, "err");
-      });
-  }
-
-  /* Local mode is legitimate for a standalone demo and fatal for a floor, so
-     it says which it is rather than looking like everything is fine. */
-  function localMode(why) {
+  function localMode() {
     var t = document.getElementById("srcTag");
-    t.textContent = isSample() ? "Sample data \u00b7 local only" : "Local only \u2014 claims not shared";
-    t.style.cssText = "";
-    t.title = (why ? why + " " : "") +
-      "Circuit claims stay in this tab. Nobody else on the team can see them.";
+    t.textContent = isSample() ? "Sample data \u00b7 local only" : "Local only";
+    t.title = "Claims are not shared with the team. Sign in to use the shared ledger.";
   }
 
   L.onChange(function () { /* stream repaints handled by refreshAll */ });
 
   /* ---------------------------------------------------------------- boot */
-  /* Gate up front, then let the auth callback decide. Rendering the tool
-     first and covering it a beat later shows a rep data they are not yet
-     entitled to read. */
-  if (fbConfig() && window.firebase) showGate(true);
   connect();
   wireSettings();
   wireLayers();

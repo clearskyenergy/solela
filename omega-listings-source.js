@@ -50,6 +50,31 @@
              "Office","Retail","Data Center","Multifamily","Institutional",
              "Vacant Land","Other"];
 
+  /* ------------------------------------------------------------ energy model
+     ONE table, here, because three files were each keeping their own and they
+     had drifted: the demo provider modelled cold storage at 140 kBtu/sqft-yr
+     and the ComEd provider at 96, so the SAME building switched between
+     providers moved its headline kW by 46%. A comment in
+     omega-comed-listings.js asserted the two were identical, which made the
+     drift invisible to anyone reading rather than measuring.
+
+     These are screening figures — CBECS/ENERGY STAR order-of-magnitude
+     medians for the type, not a metered result for a building. Everything
+     derived from them carries src "modelled" or "proxy" and the UI says so.
+     If a tenant has metered data for a segment, correct it HERE and both
+     providers move together. */
+  S.EUI = { "Warehouse": 22, "Industrial": 48, "Manufacturing": 68,
+            "Cold Storage": 96, "Flex": 38, "Office": 62, "Retail": 54,
+            "Data Center": 220, "Institutional": 58, "Multifamily": 44,
+            "Vacant Land": 0, "Other": 45 };
+
+  /* Load factor: average demand over peak demand. Turns annual kWh into an
+     estimated peak, which is what the demand-charge screen is sized against. */
+  S.EUI_LF = { "Warehouse": 0.38, "Industrial": 0.55, "Manufacturing": 0.60,
+               "Cold Storage": 0.72, "Flex": 0.50, "Retail": 0.45,
+               "Office": 0.50, "Data Center": 0.85, "Institutional": 0.42,
+               "Multifamily": 0.55, "Vacant Land": 0, "Other": 0.50 };
+
   S.register = function (key, impl) { S.providers[key] = impl; return impl; };
   S.use = function (key) {
     if (!S.providers[key]) throw new Error("No listing provider registered as '" + key + "'.");
@@ -119,7 +144,12 @@
       id:      str(r.propertyId || r.id || r.parcelId || r.pin),
       addr:    str(r.address || r.streetAddress || r.situsAddress),
       city:    str(r.city || r.municipality),
-      state:   str(r.state || "IL"),
+      state:   str(r.state),
+      /* No "IL" default. These adapters read whatever a vendor or a harvest
+         file returns, and this platform has tenants outside Illinois. A
+         missing state that renders blank is a gap a rep can see; a missing
+         state that renders "IL" is a wrong address that looks complete, and
+         it flows into the CSV export and out to a customer. */
       zip:     str(r.zip || r.zipCode),
       lat:     numOr(r.latitude != null ? r.latitude : (r.lat != null ? r.lat : (r.geo && r.geo.lat))),
       lon:     numOr(r.longitude != null ? r.longitude : (r.lon != null ? r.lon : (r.geo && r.geo.lng))),
@@ -211,7 +241,7 @@
       id:      str(r.listingId || r.id),
       addr:    str(r.address || r.streetAddress || (r.location && r.location.address)),
       city:    str(r.city || (r.location && r.location.city)),
-      state:   str(r.state || (r.location && r.location.state) || "IL"),
+      state:   str(r.state || (r.location && r.location.state)),
       zip:     str(r.zip || r.zipCode),
       lat:     numOr(r.latitude != null ? r.latitude : (r.location && r.location.lat)),
       lon:     numOr(r.longitude != null ? r.longitude : (r.location && r.location.lng)),
@@ -285,7 +315,7 @@
   function fromHarvest(r) {
     if (!r) return null;
     return {
-      id: str(r.pin || r.id), addr: str(r.addr || r.address), city: str(r.city), state: str(r.state || "IL"),
+      id: str(r.pin || r.id), addr: str(r.addr || r.address), city: str(r.city), state: str(r.state),
       zip: str(r.zip), lat: numOr(r.lat), lon: numOr(r.lon),
       sqft: numOr(r.sqft || r.buildingSqFt), lotAcres: numOr(r.lotAcres),
       type: normType(r.clsLabel || r.type), subtype: str(r.clsLabel || r.type),
@@ -330,15 +360,123 @@
     { t: "Institutional", sub: "School / campus",               lf: 0.42, w: 6  },
     { t: "Vacant Land",   sub: "Vacant industrial land",        lf: 0,    w: 5  }
   ];
-  var DEMO_STREETS = ["W 47th St","S Kostner Ave","W Cermak Rd","S Pulaski Rd","W 63rd St",
-    "S Cicero Ave","N Kedzie Ave","W Grand Ave","S Ashland Ave","W Fullerton Ave","S Damen Ave",
-    "W Roosevelt Rd","N Elston Ave","S Western Ave","W Ogden Ave","S Halsted St","N Milwaukee Ave",
-    "W Belmont Ave","S Archer Ave","E 95th St"];
-  var DEMO_OWNERS = ["Prologis LP","Link Logistics REIT","Midwest Cold Holdings LLC","Clarius Partners",
-    "Venture One Real Estate","Bridge Industrial","Hillwood Investment Props","Logistics Property Co",
-    "First Industrial LP","Duke Realty LP","CenterPoint Properties","Brennan Investment Group",
-    "IDI Logistics","Dermody Properties","Becknell Industrial","Sterling Bay LLC","Molto Properties",
-    "NorthPoint Development","Crow Holdings Industrial","Panattoni Development"];
+  /* Chicago's address grid: 0/0 is State & Madison, 800 address units to the
+     mile on both axes. Encoding it lets a demo address AGREE with the pin it
+     is attached to.
+
+     The previous generator picked a street and a house number from a hash of
+     the coordinate, independently of each other and of the map. It produced
+     "11568 W 47th St, Chicago IL 60630" on a pin sitting on West 19th Street:
+     a number roughly five miles past the western city limit, on a street
+     4700 South, in a ZIP that is 5300 North. Three mutually exclusive
+     locations on one card. Sample data is allowed to be invented; it is not
+     allowed to be internally impossible, because the person being shown it
+     checks the one address they happen to know. */
+  var GRID = { lat0: 41.88190, lon0: -87.62780, latU: 69.0 * 800, lonU: 51.4 * 800 };
+
+  /* Named streets with their grid coordinate. Diagonals (Milwaukee, Elston,
+     Archer, Ogden) are deliberately absent — their address number does not
+     follow either axis, so one cannot be derived. */
+  var EW_STREETS = [   /* east-west; the number runs east-west */
+    { n: "W 95th St", g: -9500 }, { n: "W 79th St", g: -7900 },
+    { n: "W 63rd St", g: -6300 }, { n: "W 55th St", g: -5500 },
+    { n: "W 47th St", g: -4700 }, { n: "W 39th St", g: -3900 },
+    { n: "W 31st St", g: -3100 }, { n: "W Cermak Rd", g: -2200 },
+    { n: "W 19th St", g: -1900 }, { n: "W Roosevelt Rd", g: -1200 },
+    { n: "W Grand Ave", g: 530 }, { n: "W North Ave", g: 1600 },
+    { n: "W Fullerton Ave", g: 2400 }, { n: "W Belmont Ave", g: 3200 },
+    { n: "W Irving Park Rd", g: 4000 }, { n: "W Lawrence Ave", g: 4800 },
+    { n: "W Devon Ave", g: 6400 }
+  ];
+  var NS_STREETS = [   /* north-south; the number runs north-south */
+    { n: "S Halsted St", g: -800 }, { n: "S Ashland Ave", g: -1600 },
+    { n: "S Damen Ave", g: -2000 }, { n: "S Western Ave", g: -2400 },
+    { n: "S Kedzie Ave", g: -3200 }, { n: "S Pulaski Rd", g: -4000 },
+    { n: "S Kostner Ave", g: -4400 }, { n: "S Cicero Ave", g: -4800 },
+    { n: "S Central Ave", g: -5600 }, { n: "S Austin Ave", g: -6000 },
+    { n: "S Harlem Ave", g: -7200 }
+  ];
+
+  function gridNS(lat) { return Math.round((lat - GRID.lat0) * GRID.latU); }
+  function gridEW(lon) { return Math.round((lon - GRID.lon0) * GRID.lonU); }
+
+  function nearest(list, g) {
+    var best = list[0], bd = Infinity, i, d;
+    for (i = 0; i < list.length; i++) {
+      d = Math.abs(list[i].g - g);
+      if (d < bd) { bd = d; best = list[i]; }
+    }
+    return best;
+  }
+
+  /* The grid is Chicago's and ONLY Chicago's. Outside this box the street
+     list is meaningless — nearest() will happily return "W Cermak Rd" for a
+     pin in Dallas, because it returns the closest entry in the list rather
+     than the closest street to the pin. This tool has tenants outside ComEd
+     territory and the demo provider is what they see, so a demo record away
+     from Chicago says less rather than saying something false. */
+  var GRID_BOX = { s: 41.60, n: 42.10, w: -88.00, e: -87.50 };
+
+  function inGrid(lat, lon) {
+    return lat >= GRID_BOX.s && lat <= GRID_BOX.n &&
+           lon >= GRID_BOX.w && lon <= GRID_BOX.e;
+  }
+
+  /* Address the site off whichever named street it is genuinely closest to,
+     and take the number from the perpendicular axis. Picking the axis by a
+     hash instead put four different pins on "2258 S Kedzie Ave" — same street,
+     same number, four buildings. */
+  function demoAddress(lat, lon, h) {
+    if (!inGrid(lat, lon)) {
+      /* No street name is invented off the map it belongs to. A coordinate
+         is true of the pin wherever it is, and reads as sample data rather
+         than as an address a rep might try to drive to. */
+      return "Sample site " + h.toString(36).toUpperCase() +
+             " \u00b7 " + lat.toFixed(4) + ", " + lon.toFixed(4);
+    }
+    var ns = gridNS(lat), ew = gridEW(lon);
+    var ewSt = nearest(EW_STREETS, ns), nsSt = nearest(NS_STREETS, ew);
+    var dToEW = Math.abs(ewSt.g - ns), dToNS = Math.abs(nsSt.g - ew);
+    var name, num, capped;
+    if (dToNS <= dToEW) {
+      /* On a north-south street: the number runs north-south. */
+      name = nsSt.n.replace(/^S /, ns < 0 ? "S " : "N ");
+      num = Math.abs(ns);
+      capped = ns < 0 ? 13800 : 7600;   /* the grid runs to 138th St south */
+    } else {
+      /* On an east-west street: the number runs east-west. */
+      name = ewSt.n.replace(/^W /, ew < 0 ? "W " : "E ");
+      num = Math.abs(ew);
+      capped = ew < 0 ? 7600 : 4000;    /* Harlem west, the lake east */
+    }
+    /* Position within the block, the way a real address works — otherwise
+       every pin on one row of the demo lattice lands on the same number. */
+    num += h % 98;
+    num = Math.max(100, Math.round(num / 2) * 2 + (h % 2));   /* even/odd side */
+    if (num > capped) num = capped - (h % 400);
+    return num + " " + name;
+  }
+
+  /* The demo record carries NO ZIP. The old one was "606" + a hash, which put
+     a Jefferson Park ZIP on a pin in Little Village. A ZIP that disagrees with
+     the address is a third contradictory fact on the card, and this project's
+     own rule applies to sample data as much as to real: a blank field reads as
+     "not known", an invented one reads as data. Chicago + IL is true of every
+     demo pin, so that much is said and no more. */
+
+  /* Invented firms. The list here used to be twenty real industrial REITs and
+     developers — Prologis, Duke, CenterPoint and so on — attached to invented
+     buildings, invented sale prices and invented grid claims. That is a real
+     company's name on a fabricated record, sitting in a screenshot that ends
+     up in a deck. These are made up on purpose and read as plausible without
+     naming anyone. */
+  var DEMO_OWNERS = ["Rockwell Yard Partners LP","Blue Island Logistics REIT",
+    "Midwest Cold Holdings LLC","Calumet Industrial Trust","Sawgrass Property Group",
+    "Ridgeway Industrial LP","Fox Valley Asset Co","Northline Development",
+    "Grand Junction Realty LP","Harborlight Industrial","Kinzie Yards LLC",
+    "Prairie Gate Properties","Bellwood Asset Partners","Stony Creek Industrial",
+    "Copperline Estates LP","Waterman Holdings LLC","Cedar Point Logistics",
+    "Union Row Development","Thornton Ridge Partners","Marquette Field Trust"];
 
   /* xorshift — small, deterministic, no dependencies */
   function seeded(seed) {
@@ -418,24 +556,27 @@
   function makeDemo(lat, lon, h, rnd) {
     var ty = pickWeighted(rnd, DEMO_TYPES);
     var f = S.demoFeederFor(lat, lon);
-    var num1 = (100 + (h % 89)) * 100 + (h % 98);
-    var street = DEMO_STREETS[h % DEMO_STREETS.length];
+    var street = demoAddress(lat, lon, h);
     var sqft = ty.t === "Vacant Land" ? 0
              : ty.t === "Data Center" ? Math.round((30000 + rnd() * 90000) / 500) * 500
              : Math.round((8000 + rnd() * 420000) / 500) * 500;
     var lot = Math.round((sqft / 43560 * (1.6 + rnd() * 2.4) + rnd() * 2) * 100) / 100;
 
-    /* EUI (kBtu/sf/yr) by type, converted to kWh. Modelled, and flagged as
-       modelled — never shown as if it came off a meter. */
-    var EUI = { "Warehouse": 32, "Industrial": 58, "Manufacturing": 95, "Cold Storage": 140,
-                "Flex": 55, "Retail": 68, "Office": 62, "Data Center": 300,
-                "Institutional": 54, "Vacant Land": 0 }[ty.t] || 55;
+    /* EUI (kBtu/sf/yr) from the shared table, converted to kWh. Modelled, and
+       flagged as modelled — never shown as if it came off a meter. It reads
+       S.EUI rather than a local copy so a sample record and a real record are
+       never scaled differently; a demo that quotes a bigger building than
+       production would is a demo that oversells. */
+    var EUI = S.EUI[ty.t] != null ? S.EUI[ty.t] : S.EUI.Other;
     var kwh = sqft ? Math.round(sqft * EUI * (0.75 + rnd() * 0.5) / 3.412) : null;
 
     return {
       id: "D" + h.toString(36).toUpperCase(),
-      addr: num1 + " " + street,
-      city: "Chicago", state: "IL", zip: "606" + (10 + (h % 40)),
+      addr: street,
+      /* City and state are only asserted where they are true. A tenant in
+         Dallas panning to Dallas got sites labelled "Chicago, IL" — a false
+         statement on every card, on the one surface a prospect looks at. */
+      city: inGrid(lat, lon) ? "Chicago" : "", state: inGrid(lat, lon) ? "IL" : "", zip: "",
       lat: Math.round(lat * 1e6) / 1e6, lon: Math.round(lon * 1e6) / 1e6,
       sqft: sqft || null,
       lotAcres: lot,

@@ -310,6 +310,10 @@
   .setKeyRow button{border:0;border-radius:8px;padding:8px 14px;font:inherit;
     font-weight:600;font-size:13px;background:var(--accent);color:#fff;cursor:pointer}
   .setKeyMsg{min-height:16px;font-size:12px;margin:2px 0 0}
+  .diagBox{background:var(--panel2);border:1px solid var(--line);border-radius:8px;
+    padding:9px 10px;font-family:var(--mono);font-size:10.5px;line-height:1.5;
+    max-height:230px;overflow:auto;white-space:pre-wrap;word-break:break-all;
+    color:var(--muted);margin:6px 0 0}
   .setKeyMsg.good{color:#1a7f4b}
   .setKeyMsg.bad{color:#b4341f}
   .setSeg{display:flex;background:var(--panel2);border-radius:8px;padding:2px;gap:2px}
@@ -450,6 +454,19 @@
       <p><em>Saved in this browser only. For every user to get it, a developer
          should set <code>window.CS_TILE_KEY</code> in config.js once &mdash; but
          this field is enough to go live.</em></p>
+    </section>
+
+    <section>
+      <h5>Diagnostics</h5>
+      <p>Every ComEd request this page has made, most recent last, with the
+         full URL. When this tool and ComEd's own viewer disagree about a
+         point, the difference is in the request &mdash; and reading it beats
+         guessing at it.</p>
+      <div class="setKeyRow">
+        <button id="setDiagCopy">Copy log</button>
+        <button id="setDiagRefresh">Refresh</button>
+      </div>
+      <pre id="setDiag" class="diagBox">Run a lookup, then press Refresh.</pre>
     </section>
 
     <section>
@@ -1091,13 +1108,13 @@
      qualified score. Without this cap a rep zoomed out to the metro sees a
      screen of high scores that are block maxima, calls the top ten, and
      finds the capacity belongs to a substation two miles away. */
-  function grainFactor() {
-    var s = LAY.hostingState ? LAY.hostingState() : null;
-    if (!s || !s.layerId) return 1;
-    if (s.addressResolved) return 1;
-    /* Coarser blocks are progressively less about this parcel. */
-    return { 74: 0.6, 73: 0.45, 72: 0.3, 71: 0.15 }[s.layerId] || 0.3;
-  }
+  /* Circuits are now attributed from layer 75 only, so a record either has a
+     real feeder or has none — the old case of a card carrying a block
+     maximum cannot arise. What remains is truncation: if the service capped
+     the layer-75 fetch, some parcels in view silently have no circuit, and
+     the ones that do are still correct. Nothing is scaled down for that; it
+     is surfaced in the header instead. */
+  function grainFactor() { return 1; }
 
   function score(r) {
     var s = 0;
@@ -1219,15 +1236,25 @@
      out, the colours are the BEST circuit in each block. A rep picking
      targets off that is picking blocks, not sites. */
   function hostGrainNote() {
-    var s = LAY.hostingState ? LAY.hostingState() : null;
-    if (!s || !s.layerId) return "";
     var out = [];
-    if (!s.addressResolved) {
+    /* Attribution first — it is the one that changes what a card CLAIMS,
+       where the draw grain only changes what the map looks like. */
+    var a = LAY.attribState ? LAY.attribState() : null;
+    if (a && a.tooWide) {
+      out.push("Circuits are not attributed at this zoom \u2014 layer 75 covers " +
+               "too much ground to resolve here, so cards show no feeder rather " +
+               "than a block average. Zoom to a corridor.");
+    } else if (a && a.truncated) {
+      out.push("More layer-75 circuits are in view than the service returned, " +
+               "so some parcels may show no feeder. Zoom in.");
+    }
+    var s = LAY.hostingState ? LAY.hostingState() : null;
+    if (s && s.layerId && !s.addressResolved) {
       out.push("Shading is layer " + s.layerId + " \u2014 " + s.label +
                ". Each block is coloured by the BEST circuit in it, not the " +
                "feeder at any given address. Zoom to 14+ for actual circuits.");
     }
-    if (s.truncated) {
+    if (s && s.truncated) {
       out.push("More circuits exist in this view than the service returned, so " +
                "blank areas here are not necessarily empty. Zoom in.");
     }
@@ -1281,6 +1308,29 @@
     var panel = document.getElementById("settings");
     document.getElementById("setOpen").onclick = function () { panel.className = "open"; };
     document.getElementById("setX").onclick = function () { panel.className = ""; };
+
+    /* Diagnostics. Every ComEd request, with its URL. This exists because
+       the tool and ComEd's own viewer have disagreed about a point more than
+       once, and each time the answer was in the request rather than in the
+       data — but the request was invisible, so it got guessed at instead. */
+    function paintDiag() {
+      var el = document.getElementById("setDiag");
+      var lines = (LAY.diag ? LAY.diag() : []);
+      el.textContent = lines.length ? lines.join("\n") : "No ComEd requests yet.";
+      el.scrollTop = el.scrollHeight;
+    }
+    document.getElementById("setDiagRefresh").onclick = paintDiag;
+    document.getElementById("setDiagCopy").onclick = function () {
+      var b = this;
+      var ta = document.createElement("textarea");
+      ta.value = (LAY.diag ? LAY.diag() : []).join("\n");
+      document.body.appendChild(ta); ta.select();
+      try { document.execCommand("copy"); } catch (e) {}
+      document.body.removeChild(ta);
+      b.textContent = "Copied";
+      setTimeout(function () { b.textContent = "Copy log"; }, 1400);
+    };
+    document.getElementById("setOpen").addEventListener("click", paintDiag);
 
     /* The key ships with the page, so this section is only needed on a
        hostname the key was not registered for. Shown collapsed-by-default
@@ -1741,6 +1791,29 @@
     return best ? { row: best, distance: Math.round(bd) } : null;
   }
 
+  /* The parcel the county says is under the pin. Exact where it answers, and
+     silent where no county in the registry covers this point — rather than
+     falling back to a nearest-record guess and presenting it the same way. */
+  function parcelBlockHtml(p) {
+    if (!p) return "";
+    var bits = [];
+    if (p.pin) bits.push("PIN <b>" + esc(p.pin) + "</b>");
+    if (p.acres) bits.push("<b>" + p.acres.toFixed(2) + "</b> acres");
+    if (p.val) bits.push("assessed <b>$" + fmt(p.val) + "</b>");
+    if (p.cls) bits.push("class <b>" + esc(p.cls) + "</b>");
+    return '<div class="sec"><h4>Parcel under this pin</h4>' +
+      '<p class="note"><b>' + esc(p.addr || "address not recorded") + '</b>' +
+      (p.city ? ", " + esc(p.city) : "") + " \u2014 " + esc(p.county) + " County. " +
+      bits.join(" \u00b7 ") +
+      (p.owner ? ".<br>Owner of record: <b>" + esc(p.owner) + "</b>" : "") +
+      /* The assessor layer's own description gives its completeness year.
+         An owner from 2016 renders exactly like today's owner unless the
+         year is said out loud. */
+      (p.asOf ? '. <br><small>County data complete to assessment year ' +
+        esc(p.asOf) + " \u2014 owner and value may have changed since.</small>" : ".") +
+      '</p></div>';
+  }
+
   function loadBlockHtml(lat, lon) {
     var near = nearestKnown(lat, lon);
     if (!near) {
@@ -1789,7 +1862,14 @@
     head("Reading the circuit\u2026", label);
     viabilityAt(lat, lon, label, function (v) {
       v.pinned = true;
-      showViability(v, lat, lon);
+      /* Ask the county what parcel this actually is, rather than reporting
+         the nearest record we happen to hold. The circuit read does not wait
+         on it — a slow assessor service must not delay the answer that is
+         already available. */
+      SRC.parcelAt(lat, lon, function (e, p) {
+        v.parcel = p || null;
+        showViability(v, lat, lon);
+      });
     });
   }
 
@@ -1836,13 +1916,135 @@
 
   /* ======================================================== the drawer */
 
+  /* ══════════════════════════════════════════════════════════════════════
+     VERIFY ON OPEN
+
+     A card in the list is assembled from bulk data: a harvested parcel
+     bundle that may be a year old, and circuit polygons cached for the whole
+     viewport. That is the right trade for drawing two hundred results. It is
+     the wrong trade for the one card a rep is about to act on.
+
+     So opening a card re-asks the two authorities about that exact point —
+     ComEd for the circuit, the county assessor for the parcel — and reports
+     what came back. Where the live answer differs from the card, the
+     difference is shown rather than silently swapped, because a rep who
+     quoted the old number yesterday needs to know it moved.
+
+     This is one lookup per card opened, never a sweep. The same rule the
+     README already sets for billed enrichment applies here for the same
+     reason: two hundred verifications on a pan is a different product.
+     ══════════════════════════════════════════════════════════════════════ */
+  function verifyBlock(state, r, live) {
+    if (state === "busy") {
+      return '<div class="sec" id="dVerify"><h4>Verifying against source</h4>' +
+        '<p class="note">Asking ComEd for the circuit at this point and the ' +
+        'county for the parcel\u2026</p></div>';
+    }
+    var rows = [], warn = [];
+
+    /* --- circuit ---------------------------------------------------- */
+    if (live.circuitErr) {
+      rows.push("ComEd did not answer: " + esc(live.circuitErr) +
+                ". The circuit on this card is unverified.");
+    } else if (!live.feederId) {
+      rows.push("ComEd publishes no circuit at this exact point. The card\u2019s " +
+                "circuit came from the surrounding viewport and should be " +
+                "confirmed with the utility.");
+    } else if (String(live.feederId) !== String(r.feederId)) {
+      warn.push("CIRCUIT DIFFERS. The card says <b>" + esc(r.feederId) +
+        "</b>; ComEd says <b>" + esc(live.feederId) + "</b>" +
+        (live.sub ? " on " + esc(live.sub) : "") + " at this point" +
+        (live.addressResolved ? ", resolved on layer 75" : "") +
+        ". Anything quoted from the card\u2019s circuit is quoting the wrong " +
+        "feeder.");
+    } else {
+      rows.push("Circuit <b>" + esc(live.feederId) + "</b> confirmed by ComEd" +
+        (live.addressResolved ? " on layer 75, address-resolved" : "") +
+        (live.covering > 1 ? " \u2014 " + live.covering +
+          " circuits cover this point and this is the one with most headroom" : "") +
+        ".");
+      if (live.nameplate != null && r.nameplate != null &&
+          Math.abs(live.nameplate - r.nameplate) > 1) {
+        warn.push("CAPACITY MOVED. The card was built with <b>" +
+          fmt(r.nameplate) + " kW</b>; ComEd now publishes <b>" +
+          fmt(live.nameplate) + " kW</b> on this circuit. The map refreshes " +
+          "quarterly, so a card held open across a refresh goes stale.");
+      }
+    }
+
+    /* --- parcel ----------------------------------------------------- */
+    var p = live.parcel;
+    if (!p) {
+      rows.push("No county assessor service is registered for this location, " +
+                "so the parcel details are whatever the harvest recorded.");
+    } else {
+      var diffs = [];
+      if (p.addr && r.addr && keyFromFull(p.addr) && keyFromFull(r.addr) &&
+          keyFromFull(p.addr).full !== keyFromFull(r.addr).full) {
+        diffs.push("address \u2014 county says <b>" + esc(p.addr) + "</b>");
+      }
+      if (p.owner && r.ownerOfRecord && p.owner.toUpperCase() !== String(r.ownerOfRecord).toUpperCase()) {
+        diffs.push("owner of record \u2014 county says <b>" + esc(p.owner) + "</b>");
+      }
+      if (p.acres && r.lotAcres && Math.abs(p.acres - r.lotAcres) > 0.05) {
+        diffs.push("acreage \u2014 county says <b>" + p.acres.toFixed(2) + "</b>");
+      }
+      if (diffs.length) {
+        warn.push("PARCEL DIFFERS from " + esc(p.county) + " County\u2019s live " +
+          "record: " + diffs.join("; ") + ".");
+      } else {
+        rows.push("Parcel confirmed against " + esc(p.county) + " County" +
+          (p.pin ? ", PIN <b>" + esc(p.pin) + "</b>" : "") + ".");
+      }
+      if (p.asOf) {
+        rows.push("<small>County data complete to assessment year " +
+          esc(p.asOf) + " \u2014 owner and value may have changed since.</small>");
+      }
+    }
+
+    return '<div class="sec" id="dVerify"><h4>Verified against source</h4>' +
+      (warn.length ? '<p class="note" style="color:var(--red)"><b>' +
+        warn.join('</b></p><p class="note" style="color:var(--red)"><b>') +
+        '</b></p>' : '') +
+      (rows.length ? '<p class="note">' + rows.join("<br>") + '</p>' : '') +
+      '</div>';
+  }
+
+  function verifyRecord(r) {
+    var live = { covering: 0 }, pending = 2;
+    function done() {
+      if (--pending) return;
+      var el = document.getElementById("dVerify");
+      if (el && ST.sel && ST.sel.id === r.id) el.outerHTML = verifyBlock("done", r, live);
+    }
+    LAY.probePoint(r.lat, r.lon, function (err, res) {
+      if (err) { live.circuitErr = err.message; done(); return; }
+      if (res && res.serviceFailed) {
+        live.circuitErr = (res.errors && res.errors[0]) || "no layer answered";
+        done(); return;
+      }
+      if (res && res.rows.length) {
+        var f = res.rows[0], cap = LAY.capacityOf(f) || {};
+        live.feederId = f.feeder || null;
+        live.sub = f.sub || "";
+        live.nameplate = cap.nameplate != null ? cap.nameplate : null;
+        live.addressResolved = res.addressResolved;
+        live.covering = res.rows.length;
+      }
+      done();
+    });
+    SRC.parcelAt(r.lat, r.lon, function (e, p) { live.parcel = p || null; done(); });
+  }
+
   function openDrawer(r) {
     document.getElementById("dAddr").textContent = r.addr;
     document.getElementById("dSub").textContent =
       r.city + ", " + r.state + " " + r.zip + "  \u00b7  " + (r.subtype || r.type);
-    document.getElementById("dBody").innerHTML = drawerHtml(r);
+    document.getElementById("dBody").innerHTML =
+      verifyBlock("busy", r, {}) + drawerHtml(r);
     document.getElementById("drawer").className = "open";
     wireDrawer(r);
+    verifyRecord(r);
   }
   /* Renders a searched ADDRESS in the same drawer a parcel uses, so a rep
      reads one layout whether the site came off a list or out of the search
@@ -1899,6 +2101,7 @@
       '</div>' +
       '<div class="sec"><h4>How this circuit was matched</h4>' +
         '<p class="note">' + esc(matchLine(v)) + '</p></div>' +
+      parcelBlockHtml(v.parcel) +
       loadBlockHtml(lat, lon) +
       '<div class="sec"><h4>Other developers in the queue</h4>' +
         '<p class="note">' + esc(queueLine(v.state)) + '</p></div>' +
@@ -2320,7 +2523,7 @@
         showViability(v, lat, lon);
         if (hasSource()) run(true);
       });
-      LAY.hostingIn(bounds(), function () {});
+      LAY.attribIn(bounds(), function () {});
     };
     x.send();
   }

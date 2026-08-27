@@ -75,6 +75,80 @@
                "Office": 0.50, "Data Center": 0.85, "Institutional": 0.42,
                "Multifamily": 0.55, "Vacant Land": 0, "Other": 0.50 };
 
+  /* ══════════════════════════════════════════════════════════════════════
+     PARCEL UNDER A POINT
+
+     Ported from the ComEd Capacity Finder, which had this before the Site
+     Finder did. A point-in-polygon query against the county's own live
+     assessor service answers "what parcel is this" exactly, where matching
+     against records already downloaded only answers "what is the nearest
+     thing I happen to hold".
+
+     Note the geometry type: a POINT, not an envelope. ComEd's circuits get
+     an envelope because a buffer boundary is approximate and a click on the
+     kerb should still find the circuit down the street. A parcel boundary is
+     a legal line — the point is either inside it or on the neighbour's land,
+     and widening that query would return whichever parcel happened to sort
+     first.
+
+     Each county is added only once its endpoint AND field names have been
+     read off a live record. Field names are never copied between counties:
+     a wrong mapping returns a blank field rather than an error, which is
+     indistinguishable from a parcel that genuinely has no owner recorded.
+     ══════════════════════════════════════════════════════════════════════ */
+  S.PARCEL_SERVICES = [
+    { county: "DuPage",
+      url: "https://gis.dupageco.org/arcgis/rest/services/DuPage_County_IL/ParcelsWithRealEstateCC/MapServer/0",
+      pin: "PIN", addr: "PROPADDRL1", city: "PROPCITY", owner: "PROPNAME",
+      acres: "ACREAGE", val: "REA017_FCV_TOTAL", cls: "REA017_PROP_CLASS",
+      /* This layer's own description says the data are complete to
+         Assessment Year 2016, so owner and value are potentially a decade
+         old. Shown with the year attached rather than as today's truth. */
+      asOf: "2016" }
+  ];
+
+  S.parcelAt = function (lat, lon, cb) {
+    var i = 0;
+    (function next() {
+      if (i >= S.PARCEL_SERVICES.length) { cb(null, null); return; }
+      var svc = S.PARCEL_SERVICES[i++];
+      var flds = [svc.pin, svc.addr, svc.city, svc.owner, svc.acres, svc.val, svc.cls]
+                 .filter(Boolean).join(",");
+      var q = svc.url + "/query?" + [
+        "geometry=" + lon + "," + lat,
+        "geometryType=esriGeometryPoint",
+        "inSR=4326",
+        "spatialRel=esriSpatialRelIntersects",
+        "outFields=" + encodeURIComponent(flds),
+        "returnGeometry=false",
+        "f=json"
+      ].join("&");
+      var x = new XMLHttpRequest();
+      x.open("GET", q, true);
+      x.timeout = 20000;
+      x.onreadystatechange = function () {
+        if (x.readyState !== 4) return;
+        var j = null;
+        try { j = JSON.parse(x.responseText); } catch (e) {}
+        var f = (j && j.features && j.features[0]) ? j.features[0].attributes : null;
+        if (!f) { next(); return; }
+        cb(null, {
+          pin: String(f[svc.pin] || "").trim(),
+          addr: String(f[svc.addr] || "").trim(),
+          city: String(f[svc.city] || "").trim(),
+          owner: String(f[svc.owner] || "").trim(),
+          acres: Number(f[svc.acres]) || 0,
+          val: Number(f[svc.val]) || 0,
+          cls: String(f[svc.cls] || "").trim(),
+          county: svc.county, asOf: svc.asOf || "", src: "assessor"
+        });
+      };
+      x.ontimeout = function () { next(); };
+      x.onerror = function () { next(); };
+      x.send();
+    })();
+  };
+
   S.register = function (key, impl) { S.providers[key] = impl; return impl; };
   S.use = function (key) {
     if (!S.providers[key]) throw new Error("No listing provider registered as '" + key + "'.");

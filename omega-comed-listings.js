@@ -216,7 +216,10 @@
          not a result. It is one call for the whole viewport, and the draw
          layer reads the same cache, so switching this source on does not
          double the traffic to ComEd. */
-      LAY.hostingIn(bbox, function (err) { hostErr = err || null; step(); });
+      /* attribIn, not hostingIn: attribution needs layer 75 specifically.
+         hostingIn fetches whatever grain the map is DRAWN at, and a block
+         maximum is not the circuit serving a parcel. */
+      LAY.attribIn(bbox, function (err) { hostErr = err || null; step(); });
       /* bbox scopes which county shards download. A partial failure still
          returns the counties that DID load — the error names the ones that
          did not, and that shows on the header rather than being swallowed. */

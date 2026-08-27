@@ -305,6 +305,92 @@
              label: (GRAIN[HQ.layerId] && GRAIN[HQ.layerId].label) || "" };
   };
 
+  /* ══════════════════════════════════════════════════════════════════════
+     ATTRIBUTION IS NOT DRAWING
+
+     These are two different questions answered from two different layers,
+     and conflating them was producing confidently wrong circuits.
+
+       DRAWING     — which grain is legible at this zoom. ComEd switches
+                     between five, exactly as its own viewer does, and a
+                     metro view is necessarily block maxima.
+       ATTRIBUTING — which circuit serves THIS parcel. Only layer 75 can
+                     answer that. A township block says "the best feeder in
+                     36 square miles is X", which is not a claim about any
+                     particular building on it.
+
+     Sharing one cache meant a parcel picked up whatever grain happened to be
+     drawn. Zoomed out, every card got a block maximum — a real feeder id and
+     a real number, both belonging to somewhere else.
+
+     So attribution has its own cache, always layer 75, fetched at higher
+     resolution than the drawn copy because it decides containment rather
+     than appearance. Above a viewport of about ten miles it refuses to
+     fetch at all: layer 75 across a metro is tens of thousands of buffers
+     and the answer would be truncated, which is worse than absent. In that
+     state parcels carry NO circuit and the page says to zoom in — an honest
+     blank rather than a plausible wrong id.
+     ══════════════════════════════════════════════════════════════════════ */
+  var AQ = { key: "", rows: [], busy: false, queue: [], tooWide: false, truncated: false };
+  M.ATTRIB_LAYER = 75;
+  M.ATTRIB_MAX_DEG = 0.15;        /* ~10 miles of longitude at this latitude */
+
+  M.attribState = function () {
+    return { count: AQ.rows.length, tooWide: AQ.tooWide,
+             truncated: AQ.truncated, layerId: M.ATTRIB_LAYER };
+  };
+
+  M.attribIn = function (bbox, cb) {
+    var k = bboxKey(bbox);
+    if (k === AQ.key) { cb(null, AQ.rows); return; }
+    if (AQ.busy) { AQ.queue.push(cb); return; }
+
+    if ((bbox.e - bbox.w) > M.ATTRIB_MAX_DEG || (bbox.n - bbox.s) > M.ATTRIB_MAX_DEG) {
+      AQ.key = k; AQ.rows = []; AQ.tooWide = true; AQ.truncated = false;
+      diag("attrib: viewport too wide for layer 75 — parcels get no circuit");
+      cb(null, AQ.rows);
+      return;
+    }
+
+    AQ.busy = true; AQ.queue = [cb];
+    var env = JSON.stringify({
+      xmin: bbox.w, ymin: bbox.s, xmax: bbox.e, ymax: bbox.n,
+      spatialReference: { wkid: 4326 }
+    });
+    var url = base() + "/" + M.ATTRIB_LAYER + "/query?f=json&where=1%3D1" +
+      "&geometry=" + encodeURIComponent(env) +
+      "&geometryType=esriGeometryEnvelope&inSR=4326&outSR=4326" +
+      "&spatialRel=esriSpatialRelIntersects&outFields=*&returnGeometry=true" +
+      /* Ten times finer than the drawn copy. The drawn one is simplified for
+         speed; this one decides whether a parcel is on a circuit, and 22 m
+         of simplification is enough to move a building off its own feeder. */
+      "&geometryPrecision=6&maxAllowableOffset=0.00002" +
+      "&maxRecordCountFactor=3&returnExceededLimitFeatures=false" +
+      "&resultRecordCount=4000";
+
+    getJSON(url, function (err, j) {
+      AQ.busy = false; AQ.tooWide = false;
+      var rows = [], i, row;
+      if (!err && j && !j.error && j.features) {
+        for (i = 0; i < j.features.length; i++) {
+          if (!j.features[i].geometry || !j.features[i].geometry.rings) continue;
+          row = interpret(j.features[i].attributes || {});
+          row.rings = j.features[i].geometry.rings;
+          rows.push(row);
+        }
+        AQ.truncated = !!j.exceededTransferLimit;
+        diag("attrib: " + rows.length + " layer-75 circuits" +
+             (AQ.truncated ? " (TRUNCATED)" : ""));
+      } else {
+        diag("attrib: " + (err ? err.message :
+             (j && j.error ? "service " + j.error.code : "no result")));
+      }
+      AQ.key = k; AQ.rows = rows;
+      var qs = AQ.queue; AQ.queue = [];
+      for (i = 0; i < qs.length; i++) qs[i](null, rows);
+    });
+  };
+
   M.hostingIn = function (bbox, cb) {
     var k = bboxKey(bbox);
     if (k === HQ.key && HQ.rows.length) { cb(null, HQ.rows); return; }
@@ -431,7 +517,10 @@
      the most genuinely available capacity, which is also the one a rep would
      work. This mirrors feeder_for() in build_ci_bundles.py exactly. */
   M.feederAt = function (lat, lon) {
-    var rows = HQ.rows, i, best = null, bestNet = -2, n;
+    /* AQ, not HQ. The drawn cache may be block grain; only layer 75 can say
+       which circuit serves a parcel. Empty AQ means "not resolvable at this
+       zoom", and null is the correct answer to that. */
+    var rows = AQ.rows, i, best = null, bestNet = -2, n;
     if (lat == null || lon == null) return null;
     for (i = 0; i < rows.length; i++) {
       if (!covers(rows[i], lat, lon)) continue;
@@ -444,7 +533,7 @@
   /* Every circuit covering a point, best first. The card can then say "two
      circuits cover this parcel" instead of silently picking one. */
   M.feedersAt = function (lat, lon) {
-    var rows = HQ.rows, out = [], i;
+    var rows = AQ.rows, out = [], i;
     if (lat == null || lon == null) return out;
     for (i = 0; i < rows.length; i++)
       if (covers(rows[i], lat, lon)) out.push(rows[i]);
@@ -476,7 +565,7 @@
     if (inside) return { row: inside, contains: true, beyond: false, distance: 0,
                          alsoCovering: M.feedersAt(lat, lon).length };
     var lim = maxM == null ? M.NEAREST_M : maxM;
-    var rows = HQ.rows, best = null, bd = Infinity, i, j, d;
+    var rows = AQ.rows, best = null, bd = Infinity, i, j, d;
     if (lat == null || lon == null) return null;
     for (i = 0; i < rows.length; i++) {
       for (j = 0; j < rows[i].rings.length; j++) {
@@ -500,6 +589,8 @@
      thing that drifts silently, so they need to be exercised without a live
      ComEd fetch. Nothing in the page calls this. */
   M.__setHostingRows = function (rows) { HQ.rows = rows || []; HQ.key = "test"; };
+  /* Attribution cache, which is what feederAt actually reads. */
+  M.__setAttribRows = function (rows) { AQ.rows = rows || []; AQ.key = "test"; AQ.tooWide = false; };
 
   /* ------------------------------------------------------ point resolution
      ASK THE SERVER. The cached polygons this file draws with are fetched at
@@ -597,13 +688,18 @@
                      (j.error.message ? " " + j.error.message : ""));
           errs.push("L" + id + ": " + msg);
           diag("probe L" + id + ": " + msg);
+          diag("   url " + url);
           tryNext();
           return;
         }
         if (!j.features || !j.features.length) {
           /* A real, successful "nothing here" — recorded as such, not as an
-             error, so the caller can tell the two apart. */
+             error, so the caller can tell the two apart. The URL is logged
+             too: when this tool and ComEd's own viewer disagree about a
+             point, the difference is always in the request, and guessing at
+             it from a screenshot has cost this project several rounds. */
           diag("probe L" + id + ": 0 features");
+          diag("   url " + url);
           tryNext();
           return;
         }

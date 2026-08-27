@@ -1705,6 +1705,101 @@
   }
 
   /* --------------------------------------------------------------- map */
+  /* ══════════════════════════════════════════════════════════════════════
+     DROP A PIN
+
+     Click anywhere and get the circuit under that point plus whatever is
+     known about the load there. The circuit half is always answerable — it
+     is a query against ComEd. The load half usually is not, and the whole
+     value of this depends on being straight about which is which.
+
+     Load comes from the nearest property record we already hold, within
+     120 m. That record's annual kWh is metered where Chicago's benchmarking
+     data matched it and modelled otherwise, and it is null on a bare parcel
+     because parcels carry acreage and never building area. All three states
+     read differently on the card. A pin that finds no building says so
+     rather than showing a zero.
+     ══════════════════════════════════════════════════════════════════════ */
+  var pinMarker = null;
+
+  function metresBetween(aLat, aLon, bLat, bLon) {
+    var x = (bLon - aLon) * 111320 * Math.cos((aLat + bLat) / 2 * Math.PI / 180);
+    var y = (bLat - aLat) * 110540;
+    return Math.sqrt(x * x + y * y);
+  }
+
+  /* Nearest property we have loaded, within a block or so. Not a guess about
+     which building the pin is on — a statement that this is the closest
+     record we hold and how far away it is, so a rep can judge. */
+  function nearestKnown(lat, lon, limitM) {
+    var best = null, bd = limitM == null ? 120 : limitM, i, d;
+    for (i = 0; i < ST.rows.length; i++) {
+      if (ST.rows[i].lat == null) continue;
+      d = metresBetween(lat, lon, ST.rows[i].lat, ST.rows[i].lon);
+      if (d < bd) { bd = d; best = ST.rows[i]; }
+    }
+    return best ? { row: best, distance: Math.round(bd) } : null;
+  }
+
+  function loadBlockHtml(lat, lon) {
+    var near = nearestKnown(lat, lon);
+    if (!near) {
+      return '<div class="sec"><h4>Load at this site</h4><p class="note">' +
+        'No property record within 120 m of this pin, so there is nothing to ' +
+        'size a battery against. The kW above is what the circuit will accept, ' +
+        'not what a customer\u2019s peak justifies \u2014 and the customer\u2019s ' +
+        'peak is usually the smaller of the two. Search the address, or pull a ' +
+        'bill.</p></div>';
+    }
+    var r = near.row;
+    var src = r.annualKwh ? r.annualKwh.src : null;
+    var body;
+    if (!r.annualKwh) {
+      body = 'The nearest record is <b>' + esc(r.addr || "an unnamed parcel") +
+        '</b>, ' + near.distance + ' m away, and it carries no building area \u2014 ' +
+        'parcel files record acreage, never square footage. So no load can be ' +
+        'estimated here without a bill, an interval file, or a benchmarked ' +
+        'floor area.';
+    } else {
+      body = '<b>' + fmt(r.annualKwh.value) + ' kWh/yr</b> at <b>' +
+        esc(r.addr || "the nearest record") + '</b>, ' + near.distance + ' m away' +
+        (r.peakKw ? ', an estimated peak of <b>' + fmt(r.peakKw) + ' kW</b>' : '') +
+        '. ' + (src === "metered"
+          ? 'This is <b>metered</b> \u2014 actual consumption from Chicago\u2019s ' +
+            'benchmarking data' + (r.bmYear ? ' (' + esc(String(r.bmYear)) + ')' : '') + '.'
+          : 'This is <b>modelled</b> from floor area and property type, not ' +
+            'measured. Treat it as a screening figure.') +
+        (r.sz && r.sz.kw != null
+          ? ' Sized against the circuit, that supports about <b>' + fmt(r.sz.kw) +
+            ' kW</b>' + (r.sz.circuitLimited
+              ? ' \u2014 the wire is the binding constraint here, not the load.'
+              : ' \u2014 the load is the binding constraint, not the wire.')
+          : '');
+    }
+    return '<div class="sec"><h4>Load at this site</h4>' +
+      '<p class="note">' + body + '</p></div>';
+  }
+
+  function dropPin(lat, lon) {
+    if (pinMarker) map.removeLayer(pinMarker);
+    pinMarker = window.L.circleMarker([lat, lon], {
+      radius: 8, weight: 3, color: "#0a6ed1", fillColor: "#0a6ed1", fillOpacity: 0.25
+    }).addTo(map);
+    var label = lat.toFixed(5) + ", " + lon.toFixed(5);
+    head("Reading the circuit\u2026", label);
+    viabilityAt(lat, lon, label, function (v) {
+      v.pinned = true;
+      showViability(v, lat, lon);
+    });
+  }
+
+  map.on("click", function (e) {
+    /* Leaflet gives marker clicks their own event, so this only fires on the
+       basemap. A pin is a deliberate act; it should not fight with opening a
+       card. */
+    dropPin(e.latlng.lat, e.latlng.lng);
+  });
+
   function drawMarkers(rows) {
     markerLayer.clearLayers(); MARKERS = {};
     for (var i = 0; i < rows.length; i++) {
@@ -1804,6 +1899,7 @@
       '</div>' +
       '<div class="sec"><h4>How this circuit was matched</h4>' +
         '<p class="note">' + esc(matchLine(v)) + '</p></div>' +
+      loadBlockHtml(lat, lon) +
       '<div class="sec"><h4>Other developers in the queue</h4>' +
         '<p class="note">' + esc(queueLine(v.state)) + '</p></div>' +
       '<div class="sec"><h4>Your team\u2019s claims on this circuit</h4>' +

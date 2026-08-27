@@ -637,44 +637,49 @@
      claimed, and what is therefore left. Every number comes from a source
      already on the page — LAY.feederAt for the circuit, L.feederState for
      the claims, L.sizeAt for the ceilings. Nothing new is modelled here. */
-  function viabilityAt(lat, lon, label) {
-    var near = LAY.feederNear(lat, lon);
-    if (!near) {
-      return { ok: false, key: "offterritory", label: label,
-               headline: "Outside ComEd's mapped circuits",
-               why: "No ComEd hosting-capacity polygon covers this point, and none " +
-                    "runs within " + LAY.NEAREST_M + " m of it either. It is either " +
-                    "outside the service territory or on a circuit ComEd does not " +
-                    "publish. Interconnection here starts with a call to the " +
-                    "utility, not with this map." };
-    }
-    var f = near.row;
-    var cap = LAY.capacityOf(f) || {};
-    var fid = f.feeder || null;
-    if (fid && cap.nameplate != null) {
-      L.setFeeder(fid, { nameplate: cap.nameplate, queue: cap.queue || 0, sub: f.sub || "" });
-    }
-    var st = L.feederState(fid);
-    var cs = L.circuitStatus(st);
-    /* No building load for a bare address — the circuit ceiling is the only
-       one that binds, and that is said out loud rather than presented as if
-       the customer's own peak had been considered. */
-    var sz = L.sizeAt({ feederId: fid, hours: ST.hours || 2 });
+  /* Resolve a point the way ComEd's own viewer does: ask the service with a
+     small envelope and let it intersect against full-resolution geometry.
+     Asynchronous because it is a network call, where the old cached-polygon
+     version was not — worth it, because the cached rings are simplified by
+     about 22 m and that is enough to miss a parcel that genuinely sits on
+     the circuit. */
+  function viabilityAt(lat, lon, label, cb) {
+    LAY.probePoint(lat, lon, function (err, res) {
+      if (err || !res || !res.rows.length) {
+        cb({ ok: false, key: "offterritory", label: label, feederId: null,
+             headline: "No ComEd circuit published here",
+             why: "ComEd returned no hosting-capacity feature at this point, on " +
+                  "any of its published layers. That is not the same as no " +
+                  "service \u2014 ComEd publishes capacity for some circuits and " +
+                  "not others. Confirm the serving feeder with the utility." });
+        return;
+      }
+      var f = res.rows[0];
+      var cap = LAY.capacityOf(f) || {};
+      var fid = f.feeder || null;
+      if (fid && cap.nameplate != null) {
+        L.setFeeder(fid, { nameplate: cap.nameplate, queue: cap.queue || 0, sub: f.sub || "" });
+      }
+      var st = L.feederState(fid);
+      var cs = L.circuitStatus(st);
+      var sz = L.sizeAt({ feederId: fid, hours: ST.hours || 2 });
 
-    return {
-      ok: st.known && st.sellable > 0,
-      key: cs.key, label: label,
-      feederId: fid, sub: f.sub || "",
-      contains: near.contains, distance: near.distance,
-      alsoCovering: near.alsoCovering,
-      state: st, size: sz, status: cs,
-      headline: !st.known
-        ? "Circuit found, capacity not published"
-        : st.sellable > 0
-          ? Math.round(st.sellable).toLocaleString() + " kW available on this circuit"
-          : "No capacity left on this circuit",
-      why: cs.note
-    };
+      cb({
+        ok: st.known && st.sellable > 0 && res.addressResolved,
+        key: cs.key, label: label,
+        feederId: fid, sub: f.sub || "",
+        layerId: res.layerId, grain: res.grain,
+        addressResolved: res.addressResolved,
+        covering: res.rows.length, rows: res.rows,
+        state: st, size: sz, status: cs,
+        headline: !st.known
+          ? "Circuit found, capacity not published"
+          : st.sellable > 0
+            ? Math.round(st.sellable).toLocaleString() + " kW available on this circuit"
+            : "No capacity left on this circuit",
+        why: cs.note
+      });
+    });
   }
 
   /* How the circuit was matched, in the card's own words. A containment hit
@@ -683,20 +688,26 @@
      customer cannot actually reach. */
   function matchLine(v) {
     if (!v.feederId) return "";
-    if (v.contains) {
-      return v.alsoCovering > 1
-        ? v.alsoCovering + " ComEd circuits cover this point, because the published " +
-          "polygons are buffers and they overlap. The one shown is the one with the " +
-          "most headroom \u2014 which feeder you can physically reach is settled by " +
-          "the interconnection study, not by this map."
-        : "This point falls inside ComEd\u2019s published polygon for this circuit.";
+    var s;
+    if (v.addressResolved) {
+      s = "Resolved on ComEd layer 75, the buffered circuit itself \u2014 this is " +
+          "the feeder serving this point, not an area average.";
+      if (v.covering > 1) {
+        s += " " + v.covering + " circuits cover it, because the published " +
+             "polygons are buffers and they overlap. The one shown has the most " +
+             "headroom; which you can physically reach is settled by the " +
+             "interconnection study.";
+      }
+      return s;
     }
-    return "NEAREST CIRCUIT, NOT A CONTAINING ONE. No published polygon covers this " +
-      "point; this circuit runs about " + v.distance + " m away and is the closest " +
-      "within " + LAY.NEAREST_M + " m. ComEd\u2019s polygons are generalised buffers, " +
-      "so a building on the same street can fall just outside one \u2014 but so can a " +
-      "building genuinely served by a different feeder. Confirm with ComEd before " +
-      "quoting anything from it.";
+    /* Layers 71-74 report the best circuit anywhere in a PLSS block, which is
+       a genuinely different claim. Presenting it as this parcel's feeder is
+       how a rep quotes a number from a circuit half a mile away. */
+    return "NOT ADDRESS-RESOLVED. ComEd published nothing on layer 75 here, so " +
+      "this came from layer " + v.layerId + " \u2014 " + v.grain + ". That figure " +
+      "is the BEST circuit anywhere in that block, not necessarily the one " +
+      "serving this building. Treat it as an indication that capacity exists " +
+      "nearby, never as a number to quote.";
   }
 
   /* The queue is the thing that most often kills a deal quietly, so it gets
@@ -934,6 +945,7 @@
       LAY.refreshHosting(function (n, err) {
         layCount("cHost", n, err);
         if (n === -1) notes.push("Zoom to 12+ to draw circuits.");
+        else notes.push(hostGrainNote());
         layNote(notes.join(" "));
       });
     if (document.getElementById("lyCI").checked)
@@ -952,6 +964,28 @@
       LAY.refreshILS(function (n) { layCount("cILS", n); });
   }
 
+  /* Says what the shading on screen actually is. ComEd publishes the same
+     data at five grains and switches by zoom, exactly as its own viewer does
+     — but a map of square-mile block maxima and a map of circuits look
+     identical, and only one of them is the feeder serving a parcel. Zoomed
+     out, the colours are the BEST circuit in each block. A rep picking
+     targets off that is picking blocks, not sites. */
+  function hostGrainNote() {
+    var s = LAY.hostingState ? LAY.hostingState() : null;
+    if (!s || !s.layerId) return "";
+    var out = [];
+    if (!s.addressResolved) {
+      out.push("Shading is layer " + s.layerId + " \u2014 " + s.label +
+               ". Each block is coloured by the BEST circuit in it, not the " +
+               "feeder at any given address. Zoom to 14+ for actual circuits.");
+    }
+    if (s.truncated) {
+      out.push("More circuits exist in this view than the service returned, so " +
+               "blank areas here are not necessarily empty. Zoom in.");
+    }
+    return out.join(" ");
+  }
+
   function wireLayers() {
     if (!LAY) { document.getElementById("legend").style.display = "none"; return; }
 
@@ -959,7 +993,7 @@
       document.getElementById("hostKey").hidden = !this.checked;
       LAY.hosting(this.checked, function (n, err) {
         layCount("cHost", n, err);
-        layNote(n === -1 ? "Zoom to 12+ to draw circuits." : "");
+        layNote(n === -1 ? "Zoom to 12+ to draw circuits." : hostGrainNote());
       });
     };
     document.getElementById("lyCI").onchange = function () {
@@ -1439,9 +1473,16 @@
     head(v.headline, v.why);
     if (!v.feederId) {
       document.getElementById("dAddr").textContent = short;
-      document.getElementById("dSub").textContent = "No mapped circuit at this point";
+      document.getElementById("dSub").textContent = "No circuit published here";
       document.getElementById("dBody").innerHTML =
-        '<div class="sec"><p class="note">' + esc(v.why) + '</p></div>';
+        '<div class="sec"><p class="note">' + esc(v.why) + '</p></div>' +
+        '<div class="sec"><h4>What to do with this</h4>' +
+        '<p class="note">ComEd was asked directly about this point and returned ' +
+        'nothing on any published layer. Two things to check before concluding ' +
+        'there is no service: whether the address geocoded to the right building, ' +
+        'and whether the site is inside ComEd territory at all. If both hold, ' +
+        'this circuit simply is not in the published set \u2014 ask ComEd for the ' +
+        'feeder serving the meter.</p></div>';
       document.getElementById("drawer").className = "open";
       return;
     }
@@ -1461,7 +1502,7 @@
     document.getElementById("dAddr").textContent = short;
     document.getElementById("dSub").textContent =
       "Circuit " + v.feederId + (v.sub ? "  \u00b7  " + v.sub : "") +
-      (v.contains ? "" : "  \u00b7  nearest, " + v.distance + " m");
+      (v.addressResolved ? "" : "  \u00b7  layer " + v.layerId + ", not address-resolved");
     document.getElementById("dBody").innerHTML =
       '<div class="sec">' +
         '<div class="hero"><div class="big">' +
@@ -1887,13 +1928,15 @@
       var lat = +j[0].lat, lon = +j[0].lon;
       var found = j[0].display_name || raw;
       map.setView([lat, lon], 16);
-      /* Circuits for the point first. feederAt reads the hosting cache, so
-         the polygon has to be in it before the answer means anything. */
+      /* The probe asks ComEd about this point directly, so it does not wait
+         on the viewport polygon cache — that cache is for drawing, and it is
+         simplified. The layers still load underneath for the map itself. */
       head("Reading the circuit\u2026", found);
-      LAY.hostingIn(bounds(), function () {
-        showViability(viabilityAt(lat, lon, found), lat, lon);
+      viabilityAt(lat, lon, found, function (v) {
+        showViability(v, lat, lon);
         if (hasSource()) run(true);
       });
+      LAY.hostingIn(bounds(), function () {});
     };
     x.send();
   }

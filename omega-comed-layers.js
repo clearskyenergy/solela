@@ -117,6 +117,11 @@
 
   M.PREFERRED = [75, 73, 71, 74, 72, 70];
 
+  /* Test-only: the zoom-to-layer mapping is the thing that decides whether a
+     rep is looking at circuits or at block maxima, so it needs exercising
+     without a live service index. */
+  M.__setLayersForTest = function (layers) { SVC.layers = layers || []; SVC.ready = true; };
+
   M.boot = function (cb) {
     if (SVC.ready) { if (cb) cb(null, SVC); return; }
     getJSON(base() + "?f=json", function (err, j) {
@@ -134,14 +139,107 @@
     });
   };
 
-  function detailLayer() {
-    for (var i = 0; i < M.PREFERRED.length; i++) {
-      for (var j = 0; j < SVC.layers.length; j++)
-        if (SVC.layers[j].id === M.PREFERRED[i]) return M.PREFERRED[i];
+  /* Which layer to DRAW at a given zoom.
+
+     ComEd publishes the same data at five grains and its own viewer switches
+     between them by scale: township blocks when you are looking at the metro,
+     buffered circuits when you are looking at a street. That is not a
+     compromise, it is the only thing that works — there are tens of thousands
+     of layer-75 buffers across the territory and no client can draw them all.
+
+     This function used to return 75 unconditionally while claiming in a
+     comment to pick by zoom. The effect was that a metro-wide view asked for
+     circuit-grain features, hit the 1,200-record cap, and drew an arbitrary
+     1,200 of them as though that were the territory. Empty areas on that map
+     were not empty; they were past the cap. That is the exact failure this
+     project treats as unacceptable — a shortened list that looks complete.
+
+     Cut points follow ComEd's own scale breaks closely enough:
+       z >= 14   75  buffered circuit          — address-resolved
+       z 13      74  sixteenth-section block   — best circuit in block
+       z 12      73  quarter-section block
+       z 11      72  section, 1 sq mi
+       z <= 10   71  township, 36 sq mi
+     Everything below 75 reports the BEST circuit in its block, never the
+     feeder serving a given parcel, so the grain travels with the answer and
+     the legend has to say it. */
+  var GRAIN = {
+    75: { addressResolved: true,
+          label: "Buffered circuit \u2014 address-resolved" },
+    74: { addressResolved: false, label: "Sixteenth-section block \u2014 best circuit in block" },
+    73: { addressResolved: false, label: "Quarter-section block \u2014 best circuit in block" },
+    72: { addressResolved: false, label: "Section (1x1 mi) block \u2014 best circuit in block" },
+    71: { addressResolved: false, label: "Township (6x6 mi) block \u2014 best circuit in block" }
+  };
+
+  var DRAW_BY_ZOOM = [
+    { z: 14, id: 75 }, { z: 13, id: 74 }, { z: 12, id: 73 },
+    { z: 11, id: 72 }, { z: 0,  id: 71 }
+  ];
+
+  function haveLayer(id) {
+    for (var j = 0; j < SVC.layers.length; j++)
+      if (SVC.layers[j].id === id) return true;
+    return false;
+  }
+
+  /* Web-mercator scale denominator at a Leaflet zoom, 96 dpi. Same formula
+     ComEd's viewer uses, so the two tools resolve a zoom to the same scale
+     and therefore to the same layer. */
+  function scaleAtZoom(z) { return 591657527.591555 / Math.pow(2, z - 1) / 2; }
+  M.scaleAtZoom = scaleAtZoom;
+
+  /* Finest grain first. Used to choose among the layers ComEd says are
+     visible at the current scale — if both 75 and 74 are valid here, 75 is
+     the one worth drawing because it is the only address-resolved grain. */
+  var FINEST_FIRST = [75, 74, 73, 72, 71, 70];
+
+  function detailLayer(zoom) {
+    var z = zoom == null ? (map && map.getZoom ? map.getZoom() : 14) : zoom;
+    var scale = scaleAtZoom(z), i, j, l, mn, mx, vis = [];
+
+    /* AUTHORITATIVE PATH. Every ArcGIS layer publishes minScale (the
+       zoomed-OUT limit) and maxScale (the zoomed-IN limit), and ComEd sets
+       them so that exactly one grain is meant to be drawn at any given
+       scale. Reading them is strictly better than the guessed break points
+       below: when ComEd re-tunes its scale ranges, or the quarterly refresh
+       changes which layers exist, this follows automatically. Zero means
+       unbounded on that side, which is the ArcGIS convention. */
+    for (j = 0; j < SVC.layers.length; j++) {
+      l = SVC.layers[j];
+      if (l.minScale == null && l.maxScale == null) continue;   /* no info */
+      mn = l.minScale || 0; mx = l.maxScale || 0;
+      if ((mn === 0 || scale <= mn) && (mx === 0 || scale >= mx)) vis.push(l.id);
     }
+    if (vis.length) {
+      for (i = 0; i < FINEST_FIRST.length; i++)
+        for (j = 0; j < vis.length; j++)
+          if (vis[j] === FINEST_FIRST[i]) return FINEST_FIRST[i];
+      return vis[0];
+    }
+
+    /* FALLBACK. Only reached when the service index did not load, or when it
+       carries no scale ranges. These break points are inferred, not
+       published, and they exist so a failed metadata fetch degrades to a
+       sensible map rather than to nothing. */
+    for (i = 0; i < DRAW_BY_ZOOM.length; i++) {
+      if (z >= DRAW_BY_ZOOM[i].z && haveLayer(DRAW_BY_ZOOM[i].id))
+        return DRAW_BY_ZOOM[i].id;
+    }
+    for (i = 0; i < M.PREFERRED.length; i++)
+      if (haveLayer(M.PREFERRED[i])) return M.PREFERRED[i];
     return 75;
   }
   M.detailLayer = detailLayer;
+
+  /* Is what is currently on screen the feeder itself, or a block maximum?
+     The legend and every card that quotes a drawn figure must be able to ask. */
+  M.drawnGrain = function (zoom) {
+    var id = detailLayer(zoom);
+    return { layerId: id,
+             addressResolved: id === 75,
+             label: (GRAIN[id] && GRAIN[id].label) || ("layer " + id) };
+  };
 
   /* ComEd's own three bands, and a prospecting palette that ranks by what is
      worth a call rather than by what the utility chose to emphasise. Both are
@@ -196,6 +294,17 @@
     return [b.s, b.n, b.w, b.e].map(function (x) { return (+x).toFixed(3); }).join(",");
   }
 
+  /* What the drawn hosting layer currently represents. The page reads this
+     for the legend: a map of block maxima and a map of circuits look
+     identical on screen and mean very different things. */
+  M.hostingState = function () {
+    return { layerId: HQ.layerId || null,
+             addressResolved: !!HQ.addressResolved,
+             truncated: !!HQ.truncated,
+             count: HQ.rows.length,
+             label: (GRAIN[HQ.layerId] && GRAIN[HQ.layerId].label) || "" };
+  };
+
   M.hostingIn = function (bbox, cb) {
     var k = bboxKey(bbox);
     if (k === HQ.key && HQ.rows.length) { cb(null, HQ.rows); return; }
@@ -206,12 +315,19 @@
       xmin: bbox.w, ymin: bbox.s, xmax: bbox.e, ymax: bbox.n,
       spatialReference: { wkid: 4326 }
     });
-    var url = base() + "/" + detailLayer() + "/query?f=json&where=1%3D1" +
+    var lid = detailLayer();
+    var url = base() + "/" + lid + "/query?f=json&where=1%3D1" +
       "&geometry=" + encodeURIComponent(env) +
       "&geometryType=esriGeometryEnvelope&inSR=4326&spatialRel=esriSpatialRelIntersects" +
       "&outFields=" + encodeURIComponent("OBJECTID,Feeder,SS_N,BESS_HC,PV_HC_kW,EV_HC_kW,Feeder_Q") +
       "&returnGeometry=true&geometryPrecision=5&maxAllowableOffset=0.0002" +
-      "&outSR=4326&resultRecordCount=1200";
+      /* maxRecordCountFactor is what ComEd's own viewer sends; it lifts the
+         service's per-request cap rather than accepting the default.
+         returnExceededLimitFeatures=false makes the service SAY it hit the
+         cap (exceededTransferLimit) instead of quietly returning a partial
+         set that draws exactly like a complete one. */
+      "&maxRecordCountFactor=3&returnExceededLimitFeatures=false" +
+      "&outSR=4326&resultRecordCount=2000";
 
     getJSON(url, function (err, j) {
       HQ.busy = false;
@@ -233,7 +349,15 @@
           });
         }
         HQ.key = k; HQ.rows = rows;
-        diag("hosting: cached " + rows.length + " circuits");
+        /* What is on screen, and whether it is all of it. Both travel with
+           the cache so the legend can state them rather than the map
+           implying completeness it does not have. */
+        HQ.layerId = lid;
+        HQ.addressResolved = (lid === 75);
+        HQ.truncated = !!(j.exceededTransferLimit ||
+                          j.properties && j.properties.exceededTransferLimit);
+        diag("hosting: cached " + rows.length + " circuits from layer " + lid +
+             (HQ.truncated ? " (TRUNCATED — more exist in this view)" : ""));
       } else {
         diag("hosting: " + (e ? e.message : "no result"));
       }
@@ -340,26 +464,35 @@
      the card can say "nearest circuit, 31 m away — confirm before quoting"
      rather than presenting a number the customer cannot actually reach. */
   M.NEAREST_M = 46;
+  /* How far out to keep LOOKING, as opposed to how far out to ATTRIBUTE.
+     A point with no circuit within 46 m is not the same situation as a point
+     in the middle of nowhere, and "no circuit nearby" hides which one it is.
+     Searching to 2 km lets the card say "the nearest is 190 m away" so a rep
+     can judge, without that ever becoming an attribution. */
+  M.LOOK_M = 2000;
 
   M.feederNear = function (lat, lon, maxM) {
     var inside = M.feederAt(lat, lon);
-    if (inside) return { row: inside, contains: true, distance: 0,
+    if (inside) return { row: inside, contains: true, beyond: false, distance: 0,
                          alsoCovering: M.feedersAt(lat, lon).length };
     var lim = maxM == null ? M.NEAREST_M : maxM;
-    var rows = HQ.rows, best = null, bd = lim, i, j, d;
+    var rows = HQ.rows, best = null, bd = Infinity, i, j, d;
     if (lat == null || lon == null) return null;
     for (i = 0; i < rows.length; i++) {
       for (j = 0; j < rows[i].rings.length; j++) {
         d = ringDist(lon, lat, rows[i].rings[j]);
-        /* Nearer wins; on a tie the one with more headroom wins, same rule
-           as containment. */
         if (d < bd || (Math.abs(d - bd) < 0.5 && best && netOf(rows[i]) > netOf(best))) {
           bd = d; best = rows[i];
         }
       }
     }
-    if (!best) return null;
-    return { row: best, contains: false, distance: Math.round(bd), alsoCovering: 0 };
+    if (!best || bd > M.LOOK_M) return null;
+    /* Beyond the attribution radius the circuit is REPORTED but not adopted:
+       `beyond` true, and the caller must not read capacity off it. The
+       distance is the useful part — it turns "nothing here" into "the grid
+       is 190 m that way", which is a different conversation. */
+    return { row: best, contains: false, beyond: bd > lim,
+             distance: Math.round(bd), alsoCovering: 0 };
   };
 
   /* Test-only. The geometry rules below — which of several overlapping
@@ -367,6 +500,94 @@
      thing that drifts silently, so they need to be exercised without a live
      ComEd fetch. Nothing in the page calls this. */
   M.__setHostingRows = function (rows) { HQ.rows = rows || []; HQ.key = "test"; };
+
+  /* ------------------------------------------------------ point resolution
+     ASK THE SERVER. The cached polygons this file draws with are fetched at
+     maxAllowableOffset 0.0002 — roughly 22 m of simplification — because
+     full-resolution rings for a whole viewport are enormous. That is right
+     for drawing and wrong for deciding containment: a parcel can sit 20 m
+     inside the real circuit and outside the simplified one, which is exactly
+     how an address that ComEd's own viewer resolves comes back blank here.
+
+     So a point is resolved by querying ComEd with a small envelope around it
+     and letting the service intersect against its own untouched geometry.
+     One request, no generalisation, same answer the utility's viewer gives.
+
+     LAYER GRAIN IS NOT COSMETIC. Only layer 75 is the buffered circuit and
+     therefore address-resolved. Layers 71-74 are PLSS grid blocks — township,
+     section, quarter, sixteenth — and each reports the BEST circuit anywhere
+     in that block, per ComEd's own service description. A reading off 74 is
+     not the feeder serving the parcel; it is the best feeder within a
+     quarter-mile of it. Answering from those without saying so would turn a
+     "no data" into a confident wrong number, so the grain comes back with
+     the result and the caller must show it. */
+  M.POINT_LAYERS = [75, 74, 73, 72, 71];
+  M.GRAIN = GRAIN;
+
+  /* ~60 m each way. Wide enough that a click on the kerb still catches the
+     circuit running down the street, tight enough that it cannot reach the
+     next feeder over. */
+  M.PROBE_DEG = 0.00055;
+
+  M.probePoint = function (lat, lon, cb) {
+    if (lat == null || lon == null) { cb(new Error("no point given")); return; }
+    var dLat = M.PROBE_DEG;
+    var dLon = M.PROBE_DEG / Math.cos(lat * Math.PI / 180);
+    var env = JSON.stringify({
+      xmin: lon - dLon, ymin: lat - dLat, xmax: lon + dLon, ymax: lat + dLat,
+      spatialReference: { wkid: 4326 }
+    });
+    var order = M.POINT_LAYERS.slice(), i = 0;
+
+    (function tryNext() {
+      if (i >= order.length) {
+        cb(null, { rows: [], layerId: null, addressResolved: false,
+                   grain: "", tried: order });
+        return;
+      }
+      var id = order[i++];
+      var url = base() + "/" + id + "/query?f=json&where=1%3D1" +
+        "&geometry=" + encodeURIComponent(env) +
+        "&geometryType=esriGeometryEnvelope&inSR=4326&outSR=4326" +
+        "&spatialRel=esriSpatialRelIntersects" +
+        "&outFields=" + encodeURIComponent("OBJECTID,Feeder,SS_N,BESS_HC,PV_HC_kW,EV_HC_kW,Feeder_Q") +
+        "&returnGeometry=false&resultRecordCount=25";
+
+      getJSON(url, function (err, j) {
+        if (err || !j || j.error || !j.features || !j.features.length) {
+          diag("probe L" + id + ": " +
+               (err ? err.message : (j && j.error ? "service " + j.error.code : "0 features")));
+          tryNext();
+          return;
+        }
+        var rows = [], n, a, q;
+        for (n = 0; n < j.features.length; n++) {
+          a = j.features[n].attributes || {};
+          q = parseFloat(a.Feeder_Q); if (isNaN(q)) q = 0;
+          rows.push({
+            a: a, rings: [],
+            feeder: String(a.Feeder == null ? "" : a.Feeder),
+            sub: a.SS_N == null ? "" : String(a.SS_N),
+            queue: q,
+            bess: parseFloat(a.BESS_HC),
+            pv: parseFloat(a.PV_HC_kW),
+            ev: parseFloat(a.EV_HC_kW)
+          });
+        }
+        /* Buffers overlap, so several feeders can cover one parcel. Best
+           headroom first — the same rule feederAt and build_ci_bundles.py
+           use, so the map, the harvest and this probe cannot disagree. */
+        rows.sort(function (x, y) { return netOf(y) - netOf(x); });
+        diag("probe L" + id + ": " + rows.length + " circuit(s)");
+        cb(null, {
+          rows: rows, layerId: id,
+          addressResolved: !!(GRAIN[id] && GRAIN[id].addressResolved),
+          grain: (GRAIN[id] && GRAIN[id].label) || "unknown grain",
+          tried: order.slice(0, i)
+        });
+      });
+    })();
+  };
 
   /* Nameplate for the product currently selected, net of queued DER. */
   M.capacityOf = function (row) {

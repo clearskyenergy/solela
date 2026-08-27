@@ -261,17 +261,112 @@
      it costs nothing per parcel — a sweep of 400 buildings is still one
      ArcGIS call. Returns null rather than guessing: a wrong feeder id on a
      card is worse than a blank one, because a rep will quote it. */
+  /* Metres between two lon/lat points, and from a point to a segment.
+     Equirectangular at the working latitude — good to a metre or two across
+     a city, and it is only ever deciding "is this parcel on that circuit". */
+  function mPerDeg(lat) {
+    return { x: 111320 * Math.cos(lat * Math.PI / 180), y: 110540 };
+  }
+  function segDist(px, py, ax, ay, bx, by, k) {
+    var dx = (bx - ax) * k.x, dy = (by - ay) * k.y;
+    var wx = (px - ax) * k.x, wy = (py - ay) * k.y;
+    var L = dx * dx + dy * dy;
+    var t = L <= 0 ? 0 : Math.max(0, Math.min(1, (wx * dx + wy * dy) / L));
+    var ex = wx - t * dx, ey = wy - t * dy;
+    return Math.sqrt(ex * ex + ey * ey);
+  }
+  function ringDist(lon, lat, ring) {
+    var k = mPerDeg(lat), best = Infinity, i, d;
+    for (i = 0; i < ring.length - 1; i++) {
+      d = segDist(lon, lat, ring[i][0], ring[i][1], ring[i + 1][0], ring[i + 1][1], k);
+      if (d < best) best = d;
+    }
+    return best;
+  }
+
+  function covers(row, lat, lon) {
+    var hit = false, j;
+    for (j = 0; j < row.rings.length; j++)
+      if (inRing(lon, lat, row.rings[j])) hit = !hit;
+    return hit;
+  }
+
+  /* Net capacity for the selected product. Used to rank overlapping circuits
+     the same way build_ci_bundles.py ranks them, so the map and the harvest
+     never disagree about which feeder a parcel belongs to. */
+  function netOf(row) {
+    var c = M.capacityOf(row);
+    if (!c || c.nameplate == null) return -1;
+    return Math.max(0, c.nameplate - (c.queue || 0));
+  }
+
+  /* Circuit polygons are BUFFERS and they overlap — a point routinely sits
+     inside several. Returning the first hit makes the answer depend on the
+     order ComEd happened to serve them, which is how a parcel gets attributed
+     to the 0 kW circuit while a 360 kW one covers it too. Take the one with
+     the most genuinely available capacity, which is also the one a rep would
+     work. This mirrors feeder_for() in build_ci_bundles.py exactly. */
   M.feederAt = function (lat, lon) {
-    var rows = HQ.rows, i, j, hit;
+    var rows = HQ.rows, i, best = null, bestNet = -2, n;
     if (lat == null || lon == null) return null;
     for (i = 0; i < rows.length; i++) {
-      hit = false;
-      for (j = 0; j < rows[i].rings.length; j++)
-        if (inRing(lon, lat, rows[i].rings[j])) hit = !hit;
-      if (hit) return rows[i];
+      if (!covers(rows[i], lat, lon)) continue;
+      n = netOf(rows[i]);
+      if (n > bestNet) { bestNet = n; best = rows[i]; }
     }
-    return null;
+    return best;
   };
+
+  /* Every circuit covering a point, best first. The card can then say "two
+     circuits cover this parcel" instead of silently picking one. */
+  M.feedersAt = function (lat, lon) {
+    var rows = HQ.rows, out = [], i;
+    if (lat == null || lon == null) return out;
+    for (i = 0; i < rows.length; i++)
+      if (covers(rows[i], lat, lon)) out.push(rows[i]);
+    out.sort(function (a, b) { return netOf(b) - netOf(a); });
+    return out;
+  };
+
+  /* NEAREST_M is how far outside a buffer a point may sit and still be
+     attributed. ComEd's own viewer resolves addresses with a 150 ft buffer,
+     which is 46 m, and that is the default here for the same reason: the
+     published polygon is a generalised buffer around a circuit route, and a
+     building on that street can fall a few metres outside it through
+     rounding alone.
+
+     A proximity match is NOT the same answer as a containment match and must
+     never be rendered as one. It comes back flagged, with the distance, so
+     the card can say "nearest circuit, 31 m away — confirm before quoting"
+     rather than presenting a number the customer cannot actually reach. */
+  M.NEAREST_M = 46;
+
+  M.feederNear = function (lat, lon, maxM) {
+    var inside = M.feederAt(lat, lon);
+    if (inside) return { row: inside, contains: true, distance: 0,
+                         alsoCovering: M.feedersAt(lat, lon).length };
+    var lim = maxM == null ? M.NEAREST_M : maxM;
+    var rows = HQ.rows, best = null, bd = lim, i, j, d;
+    if (lat == null || lon == null) return null;
+    for (i = 0; i < rows.length; i++) {
+      for (j = 0; j < rows[i].rings.length; j++) {
+        d = ringDist(lon, lat, rows[i].rings[j]);
+        /* Nearer wins; on a tie the one with more headroom wins, same rule
+           as containment. */
+        if (d < bd || (Math.abs(d - bd) < 0.5 && best && netOf(rows[i]) > netOf(best))) {
+          bd = d; best = rows[i];
+        }
+      }
+    }
+    if (!best) return null;
+    return { row: best, contains: false, distance: Math.round(bd), alsoCovering: 0 };
+  };
+
+  /* Test-only. The geometry rules below — which of several overlapping
+     buffers wins, and how far outside one a point may sit — are the kind of
+     thing that drifts silently, so they need to be exercised without a live
+     ComEd fetch. Nothing in the page calls this. */
+  M.__setHostingRows = function (rows) { HQ.rows = rows || []; HQ.key = "test"; };
 
   /* Nameplate for the product currently selected, net of queued DER. */
   M.capacityOf = function (row) {

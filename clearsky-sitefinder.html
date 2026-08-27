@@ -638,15 +638,17 @@
      already on the page — LAY.feederAt for the circuit, L.feederState for
      the claims, L.sizeAt for the ceilings. Nothing new is modelled here. */
   function viabilityAt(lat, lon, label) {
-    var f = LAY.feederAt(lat, lon);
-    if (!f) {
+    var near = LAY.feederNear(lat, lon);
+    if (!near) {
       return { ok: false, key: "offterritory", label: label,
                headline: "Outside ComEd's mapped circuits",
-               why: "No ComEd hosting-capacity polygon covers this point. It is " +
-                    "either outside the service territory or on a circuit ComEd " +
-                    "does not publish. Interconnection here starts with a call to " +
-                    "the utility, not with this map." };
+               why: "No ComEd hosting-capacity polygon covers this point, and none " +
+                    "runs within " + LAY.NEAREST_M + " m of it either. It is either " +
+                    "outside the service territory or on a circuit ComEd does not " +
+                    "publish. Interconnection here starts with a call to the " +
+                    "utility, not with this map." };
     }
+    var f = near.row;
     var cap = LAY.capacityOf(f) || {};
     var fid = f.feeder || null;
     if (fid && cap.nameplate != null) {
@@ -663,7 +665,9 @@
       ok: st.known && st.sellable > 0,
       key: cs.key, label: label,
       feederId: fid, sub: f.sub || "",
-      state: st, status: cs, size: sz,
+      contains: near.contains, distance: near.distance,
+      alsoCovering: near.alsoCovering,
+      state: st, size: sz, status: cs,
       headline: !st.known
         ? "Circuit found, capacity not published"
         : st.sellable > 0
@@ -671,6 +675,28 @@
           : "No capacity left on this circuit",
       why: cs.note
     };
+  }
+
+  /* How the circuit was matched, in the card's own words. A containment hit
+     and a proximity hit are different confidences and must never be written
+     the same way — attributing the wrong feeder means quoting capacity the
+     customer cannot actually reach. */
+  function matchLine(v) {
+    if (!v.feederId) return "";
+    if (v.contains) {
+      return v.alsoCovering > 1
+        ? v.alsoCovering + " ComEd circuits cover this point, because the published " +
+          "polygons are buffers and they overlap. The one shown is the one with the " +
+          "most headroom \u2014 which feeder you can physically reach is settled by " +
+          "the interconnection study, not by this map."
+        : "This point falls inside ComEd\u2019s published polygon for this circuit.";
+    }
+    return "NEAREST CIRCUIT, NOT A CONTAINING ONE. No published polygon covers this " +
+      "point; this circuit runs about " + v.distance + " m away and is the closest " +
+      "within " + LAY.NEAREST_M + " m. ComEd\u2019s polygons are generalised buffers, " +
+      "so a building on the same street can fall just outside one \u2014 but so can a " +
+      "building genuinely served by a different feeder. Confirm with ComEd before " +
+      "quoting anything from it.";
   }
 
   /* The queue is the thing that most often kills a deal quietly, so it gets
@@ -1434,22 +1460,21 @@
     ST.sel = rec;
     document.getElementById("dAddr").textContent = short;
     document.getElementById("dSub").textContent =
-      "Circuit " + v.feederId + (v.sub ? "  \u00b7  " + v.sub : "");
+      "Circuit " + v.feederId + (v.sub ? "  \u00b7  " + v.sub : "") +
+      (v.contains ? "" : "  \u00b7  nearest, " + v.distance + " m");
     document.getElementById("dBody").innerHTML =
       '<div class="sec">' +
         '<div class="hero"><div class="big">' +
           (v.size.kw == null ? "&mdash;" : fmt(v.size.kw)) + ' <small>kW</small></div>' +
         '<div class="cap">' + esc(v.headline) + '</div></div>' +
-        /* Said plainly: no building means no load ceiling, and the number
-           above is what the WIRE allows, not what a customer's peak
-           justifies. Presenting a circuit ceiling as a battery size is how a
-           proposal promises a battery three times the load it can shave. */
         '<p class="note">This is what the circuit will accept, not a sized ' +
         'battery. There is no building record at this address, so nothing here ' +
         'accounts for the customer\u2019s own peak demand \u2014 which is usually ' +
         'the smaller of the two and usually the one that binds. Pull a bill or ' +
         'an interval file before quoting.</p>' +
       '</div>' +
+      '<div class="sec"><h4>How this circuit was matched</h4>' +
+        '<p class="note">' + esc(matchLine(v)) + '</p></div>' +
       '<div class="sec"><h4>Other developers in the queue</h4>' +
         '<p class="note">' + esc(queueLine(v.state)) + '</p></div>' +
       '<div class="sec"><h4>Your team\u2019s claims on this circuit</h4>' +

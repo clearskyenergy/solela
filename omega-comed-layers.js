@@ -353,13 +353,17 @@
     }
 
     AQ.busy = true; AQ.queue = [cb];
+    /* Web Mercator in, degrees out — the projection ComEd's own viewer
+       sends. Geometry comes back in 4326 because the point-in-polygon tests
+       in this file work in degrees. */
+    var sw = toMerc(bbox.s, bbox.w), ne = toMerc(bbox.n, bbox.e);
     var env = JSON.stringify({
-      xmin: bbox.w, ymin: bbox.s, xmax: bbox.e, ymax: bbox.n,
-      spatialReference: { wkid: 4326 }
+      xmin: sw.x, ymin: sw.y, xmax: ne.x, ymax: ne.y,
+      spatialReference: { wkid: 102100 }
     });
     var url = base() + "/" + M.ATTRIB_LAYER + "/query?f=json&where=1%3D1" +
       "&geometry=" + encodeURIComponent(env) +
-      "&geometryType=esriGeometryEnvelope&inSR=4326&outSR=4326" +
+      "&geometryType=esriGeometryEnvelope&inSR=102100&outSR=4326" +
       "&spatialRel=esriSpatialRelIntersects&outFields=*&returnGeometry=true" +
       /* Ten times finer than the drawn copy. The drawn one is simplified for
          speed; this one decides whether a parcel is on a circuit, and 22 m
@@ -685,42 +689,73 @@
     };
   }
 
+  /* Which layers to probe, in the Capacity Finder's own order.
+
+     Its analyze() calls layersForScale(scaleAtZoom(17)) — every layer the
+     service advertises, those VISIBLE at street scale first, then all the
+     rest appended, capped at 12 attempts. That ordering is why it resolves
+     points this tool did not: a layer whose scale range makes it visible at
+     zoom 17 gets asked before anything else, whatever its id happens to be.
+
+     Reimplementing this by sorting ids was a guess. This is the same
+     function, so the two tools ask the same layers in the same order and can
+     no longer disagree about whether a point has capacity. */
+  function layersForScale(scale) {
+    var vis = [], other = [], j, l, mn, mx;
+    for (j = 0; j < SVC.layers.length; j++) {
+      l = SVC.layers[j];
+      if (l.id == null) continue;
+      mn = l.minScale || 0;            /* zoomed-OUT limit */
+      mx = l.maxScale || 0;            /* zoomed-IN limit  */
+      var ok = (mn === 0 || scale <= mn) && (mx === 0 || scale >= mx);
+      (ok ? vis : other).push(l.id);
+    }
+    return vis.concat(other);
+  }
+  M.layersForScale = layersForScale;
+
+  /* 403/498/499 mean ComEd refused us, not that the site is empty. The
+     usual cause is the monthly service name rotating out from under the
+     Worker's UPSTREAM constant. */
+  function is403(j) {
+    return !!(j && j.error && (j.error.code === 403 || j.error.code === 499 ||
+                               j.error.code === 498));
+  }
+
   M.probePoint = function (lat, lon, cb) {
     if (lat == null || lon == null) { cb(new Error("no point given")); return; }
-    /* The service is asked what layers it HAS before any of them are probed.
-
-       This used to walk a hardcoded [75, 74, 73, 72, 71]. Those numbers were
-       inferred, never verified, and this file's own comment says ComEd
-       renumbers layers between publishes — so on a service where 71 is not a
-       township block, every probe came back empty and the tool reported "no
-       capacity published here" for sites that plainly have it. ComEd's own
-       viewer never hardcodes an id; it reads the service definition, and so
-       does this now.
-
-       Layer 75 stays FIRST when present because it is the only
-       address-resolved grain. Everything else the service offers is tried
-       after it, highest id first, since the coarser aggregates are lower. */
     M.boot(function () {
-      var ids = [], seen = {}, j;
-      for (j = 0; j < SVC.layers.length; j++) {
-        var id = SVC.layers[j].id;
-        if (id == null || seen[id]) continue;
-        seen[id] = 1; ids.push(id);
-      }
-      ids.sort(function (a, b) { return b - a; });
-      if (ids.indexOf(75) >= 0) ids = [75].concat(ids.filter(function (v) { return v !== 75; }));
+      var ids = layersForScale(scaleAtZoom(17)).slice(0, 12);
       if (!ids.length) ids = M.POINT_LAYERS.slice();
-      diag("probe: service offers layers " + ids.join(","));
+      diag("probe: layer order " + ids.join(","));
       probeOrder(lat, lon, ids, cb);
     });
   };
 
+  /* Web Mercator, because that is what ComEd's own viewer sends.
+
+     Its tile requests carry inSR=102100 with the envelope in metres. This
+     tool has been sending inSR=4326 with degrees — which ArcGIS is supposed
+     to reproject, but "supposed to" is doing a lot of work on a service that
+     has already surprised us twice. The known-good request is in Web
+     Mercator, so the probe now matches it exactly rather than relying on a
+     reprojection nobody has verified.
+
+     outSR stays 4326 so anything that does come back with geometry is still
+     in the degrees the rest of this file works in. */
+  function toMerc(lat, lon) {
+    var x = lon * 20037508.34 / 180;
+    var y = Math.log(Math.tan((90 + lat) * Math.PI / 360)) / (Math.PI / 180);
+    return { x: x, y: y * 20037508.34 / 180 };
+  }
+
   function probeOrder(lat, lon, order, cb) {
-    var dLat = M.PROBE_DEG;
-    var dLon = M.PROBE_DEG / Math.cos(lat * Math.PI / 180);
+    /* ~60 m each way, matching the Capacity Finder's snap radius, expressed
+       in metres now rather than degrees. */
+    var c = toMerc(lat, lon), R = 61;
     var env = JSON.stringify({
-      xmin: lon - dLon, ymin: lat - dLat, xmax: lon + dLon, ymax: lat + dLat,
-      spatialReference: { wkid: 4326 }
+      xmin: c.x - R, ymin: c.y - R, xmax: c.x + R, ymax: c.y + R,
+      spatialReference: { wkid: 102100 }
     });
     var i = 0, errs = [], lastUrl = "", empties = [];
 
@@ -739,9 +774,14 @@
       var id = order[i++];
       var url = base() + "/" + id + "/query?f=json&where=1%3D1" +
         "&geometry=" + encodeURIComponent(env) +
-        "&geometryType=esriGeometryEnvelope&inSR=4326&outSR=4326" +
+        "&geometryType=esriGeometryEnvelope&inSR=102100&outSR=4326" +
         "&spatialRel=esriSpatialRelIntersects" +
-        "&outFields=*&returnGeometry=false&resultRecordCount=25";
+        "&outFields=*&returnGeometry=false" +
+        /* Both sent by ComEd's viewer. The factor lifts the service's own
+           record cap; returnExceededLimitFeatures=false makes it SAY when it
+           truncated instead of quietly returning a partial set. */
+        "&maxRecordCountFactor=3&returnExceededLimitFeatures=false" +
+        "&resultRecordCount=25";
       lastUrl = url;
 
       getJSON(url, function (err, j) {
@@ -750,6 +790,18 @@
                      (j.error.message ? " " + j.error.message : ""));
           errs.push("L" + id + ": " + msg);
           diag("probe L" + id + ": " + msg);
+          /* A refusal is not a per-layer miss — every other layer will refuse
+             too. Stop and say so, rather than burning eleven more requests
+             and then reporting "no capacity". Almost always this is ComEd's
+             monthly service name having rotated past the Worker's UPSTREAM. */
+          if (is403(j)) {
+            cb(null, { rows: [], layerId: null, addressResolved: false,
+                       grain: "", tried: order.slice(0, i), errors: errs,
+                       serviceFailed: true, blocked: true,
+                       emptyEverywhere: false, suspicious: false,
+                       empties: empties, lastUrl: url });
+            return;
+          }
           tryNext();
           return;
         }

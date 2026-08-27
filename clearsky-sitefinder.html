@@ -583,7 +583,7 @@
      Shown in Settings and stamped into the diagnostics log. Several rounds of
      debugging have been spent on the question "is the deployed file the one
      we just changed", and a screenshot cannot answer it. Now it can. */
-  var CS_BUILD = "2026-08-27 22:29 UTC";
+  var CS_BUILD = "2026-08-27 22:53 UTC";
 
   function savedTileKey() {
     try { return window.localStorage.getItem("cs.tileKey") || ""; }
@@ -2091,12 +2091,21 @@
       try { j = JSON.parse(x.responseText); } catch (e) {}
       var m = j && j.result && j.result.addressMatches && j.result.addressMatches[0];
       if (m && m.coordinates) {
-        /* Census echoes what it matched. If we asked for 4343 and it matched
-           something else, that is not our building. */
+        /* Census echoes what it matched. An exact number is best; a NEARBY
+           number on the same street is still the right block and the right
+           circuit, so it is accepted and flagged rather than discarded —
+           discarding it was making the whole search fail. A number far away
+           is a different site and is refused. */
         var got = houseNumberOf(m.matchedAddress);
-        if (want && got && got !== want) { nominatim(); return; }
+        var near = true;
+        if (want && got && got !== want) {
+          near = Math.abs(parseInt(got, 10) - parseInt(want, 10)) <= 40;
+          if (!near) { nominatim(); return; }
+        }
         accept({ lat: +m.coordinates.y, lon: +m.coordinates.x,
-                 src: "census", matched: m.matchedAddress || "" });
+                 src: "census", exact: !want || got === want,
+                 interpolated: !!(want && got && got !== want),
+                 matched: m.matchedAddress || "" });
         return;
       }
       nominatim();
@@ -2122,23 +2131,61 @@
         var j = null;
         try { j = JSON.parse(y.responseText); } catch (e) {}
         if (!j || !j.length) { reject(); return; }
-        var i, r, ad;
+
+        /* THREE PASSES, degrading deliberately.
+
+           Requiring a house number outright was too strict and broke every
+           search: Nominatim frequently answers a numbered address with a
+           STREET INTERPOLATION — a point measured along the road, with no
+           house_number field — and that is a perfectly good answer, close
+           enough that ComEd resolves the same circuit from it.
+
+           What must still be refused is the STREET ITSELF (class=highway),
+           whose "location" is the centroid of the whole road. For South
+           Michigan Avenue that is in the Loop, seven kilometres from 4343
+           South. So: take an exact house match if there is one, else the
+           best non-street result and mark it interpolated, and only then
+           give up. */
+        var i, r, ad, interpolated = null;
+
         for (i = 0; i < j.length; i++) {
-          r = j[i];
-          ad = r.address || {};
-          /* Reject a street-centroid result for a numbered address. Nominatim
-             signals this with class=highway, or by returning no house_number
-             while we asked for one. */
-          if (want) {
-            if (r.class === "highway") continue;
-            if (ad.house_number && ad.house_number !== want) continue;
-            if (!ad.house_number) continue;
+          r = j[i]; ad = r.address || {};
+          if (want && ad.house_number === want) {
+            accept({ lat: +r.lat, lon: +r.lon, src: "nominatim",
+                     exact: true, matched: r.display_name || "" });
+            return;
           }
-          accept({ lat: +r.lat, lon: +r.lon, src: "nominatim",
-                   matched: r.display_name || "" });
+        }
+        for (i = 0; i < j.length; i++) {
+          r = j[i]; ad = r.address || {};
+          /* The road itself is never an answer for a numbered address. */
+          if (want && r.class === "highway") continue;
+          /* A DIFFERENT house number is a different building. */
+          if (want && ad.house_number && ad.house_number !== want) continue;
+          interpolated = r;
+          break;
+        }
+        if (interpolated) {
+          accept({ lat: +interpolated.lat, lon: +interpolated.lon,
+                   src: "nominatim",
+                   exact: !want,
+                   interpolated: !!want,
+                   matched: interpolated.display_name || "" });
           return;
         }
-        reject();
+        /* LAST PASS: take the first result whatever it is, flagged as a
+           street-level match. The Capacity Finder does exactly this and never
+           fails; refusing here is what made every search come back "not
+           found". A street centroid IS a bad answer for a numbered address —
+           so it is accepted and labelled, not accepted silently, and the next
+           rung of the ladder would have been looser anyway. */
+        r = j[0];
+        accept({ lat: +r.lat, lon: +r.lon, src: "nominatim",
+                 exact: !want, interpolated: !!want,
+                 street: !!(want && r.class === "highway"),
+                 matched: r.display_name || "" });
+        return;
+                reject();
       };
       y.ontimeout = y.onerror = function () { reject(); };
       y.send();
@@ -2621,7 +2668,15 @@
          site on the wrong feeder entirely. */
       g("Position", r.approx
           ? '<b style="color:var(--red)">ZIP centroid \u2014 not the building</b>'
-          : r.geoSrc === "census" ? "Geocoded \u00b7 US Census"
+          : r.geoStreet
+              ? '<b style="color:var(--red)">Street-level only</b> \u2014 the ' +
+                'house number did not resolve, so this is a point on the road ' +
+                'and may be far from the building'
+          : r.geoInterp
+              ? '<b>Interpolated along the street</b> \u00b7 ' +
+                (r.geoSrc === "census" ? "US Census" : "OpenStreetMap") +
+                ' \u2014 the block is right, the rooftop may not be'
+          : r.geoSrc === "census" ? "Geocoded \u00b7 US Census \u00b7 rooftop"
           : r.geoSrc === "nominatim" ? "Geocoded \u00b7 OpenStreetMap"
           : r.src === "comed" ? "Parcel centroid \u00b7 county assessor"
           : "As supplied") +
@@ -2916,37 +2971,34 @@
     }
     head("Locating\u2026", raw);
 
-    /* A LADDER, not a single attempt.
+    /* THE CAPACITY FINDER'S LADDER, verbatim.
 
-       Nominatim answers "4343 S Michigan Ave, Chicago" and does not answer
-       "4343 S Michigan Ave Chicago, IL 60653" — the same address with more
-       information in it. That is not a bug in the address, it is how the
-       index matches, and one attempt made the tool look broken on addresses
-       Google resolves instantly.
+       Its geocode() builds these attempts and takes the first Nominatim
+       result that comes back for any of them. It never fails, which is why
+       it resolves addresses this tool was rejecting. The rungs, in order:
 
-       Census goes first because it is the authority for US street addresses,
-       is free and unlimited, and returns a rooftop point rather than a
-       street interpolation. Then Nominatim, then progressively looser forms
-       of the same address. Each rung is a real place; the ZIP rung is last
-       because a ZIP centroid can be a mile from the building and everything
-       downstream — circuit, substation, score — is computed from the point. */
-    var attempts = [];
+         1. the string as typed
+         2. same, with the house number stripped off the first part
+         3. everything after the first comma (city, state, ZIP)
+         4. the string with ", IL, USA" appended, if no state present
+         5. the bare ZIP with ", IL, USA"
+
+       Census is tried first on each rung because it is the authority for US
+       street addresses and returns a rooftop rather than an interpolation.
+       If it has nothing, Nominatim answers exactly as it does for the
+       Capacity Finder. The two tools now resolve the same string the same
+       way. */
     var txt = raw.trim();
     var parts = txt.split(",").map(function (s) { return s.trim(); }).filter(Boolean);
-    attempts.push({ q: txt, kind: "exact" });
-    /* "4343 S Michigan Ave Chicago, IL 60653" -> "4343 S Michigan Ave, Chicago, IL 60653".
-       A missing comma between street and city is the single most common way
-       a typed address fails to match. */
-    var glued = txt.replace(/\s+(Chicago|Elmhurst|Naperville|Aurora|Joliet|Cicero|Berwyn|Evanston|Skokie|Oak Park|Rockford)\s*,/i,
-                            ", $1,");
-    if (glued !== txt) attempts.push({ q: glued, kind: "comma-repaired" });
-    if (!/\b(il|illinois)\b/i.test(txt)) attempts.push({ q: txt + ", IL, USA", kind: "state added" });
+    var attempts = [{ q: txt, kind: "as typed" }];
     if (parts.length > 1) {
-      /* Drop the ZIP — Nominatim often fails on a ZIP that disagrees with its
-         own boundary data even when the street address is perfectly good. */
-      var noZip = txt.replace(/\s*\b\d{5}(-\d{4})?\b\s*$/, "").replace(/,\s*$/, "");
-      if (noZip !== txt) attempts.push({ q: noZip, kind: "without ZIP" });
+      var p0 = parts[0].replace(/^\s*\d+\s+/, "");
+      if (p0 !== parts[0])
+        attempts.push({ q: [p0].concat(parts.slice(1)).join(", "), kind: "street only", approx: true });
+      attempts.push({ q: parts.slice(1).join(", "), kind: "city and ZIP", approx: true });
     }
+    if (!/\b(il|illinois)\b/i.test(txt))
+      attempts.push({ q: txt + ", IL, USA", kind: "state added" });
     var zip = (txt.match(/\b\d{5}\b/) || [])[0];
     if (zip) attempts.push({ q: zip + ", IL, USA", kind: "ZIP centroid", approx: true });
 
@@ -2955,13 +3007,10 @@
       if (ai >= attempts.length) {
         head("Not found",
              "No match for \u201c" + raw + "\u201d after " + attempts.length +
-             " attempts. Try dropping the ZIP, or a cross street.");
+             " attempts. Try a cross street.");
         return;
       }
       var a = attempts[ai++];
-      /* Verbatim: the user typed a whole address, so it must not be
-         recomposed. The ZIP-centroid rung is the only one allowed to match
-         without a house number. */
       geocodeOne(a.q, "", "", function (hit) {
         if (!hit) { rung(); return; }
         landOn(hit.lat, hit.lon, raw, a, hit);
@@ -2982,6 +3031,8 @@
       }
       viabilityAt(lat, lon, label, function (v) {
         v.geoSrc = hit.src; v.approxPin = !!attempt.approx;
+        v.geoInterp = !!hit.interpolated;
+        v.geoStreet = !!hit.street;
         v.matched = hit.matched || "";
         showViability(v, lat, lon);
         if (hasSource()) run(true);

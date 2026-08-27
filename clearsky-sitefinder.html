@@ -434,11 +434,13 @@
 
     <section id="setTileSec">
       <h5>Basemap key</h5>
-      <p>CARTO now requires a free key for map tiles. Without one every tile is
-         stamped &ldquo;API KEY REQUIRED&rdquo;. Get one at
-         <a href="https://carto.com/basemaps/apikey" target="_blank" rel="noopener">carto.com/basemaps/apikey</a>
-         &mdash; it is free, there is no approval queue, and it covers 5 million
-         tiles a month. Paste it here and the map redraws immediately.</p>
+      <p>Map tiles come from CARTO, which requires a key. One is built into this
+         page and registered for ClearSky's domains, so there is normally
+         nothing to do here. If the map is watermarked
+         &ldquo;API&nbsp;KEY&nbsp;REQUIRED&rdquo;, this hostname is not on the
+         registered list &mdash; add it at
+         <a href="https://carto.com/basemaps/apikey" target="_blank" rel="noopener">carto.com/basemaps/apikey</a>,
+         or paste a different key below.</p>
       <div class="setKeyRow">
         <input type="text" id="setTileKey" placeholder="Paste your CARTO key" autocomplete="off" spellcheck="false">
         <button id="setTileSave">Save</button>
@@ -559,9 +561,26 @@
     try { return window.localStorage.getItem("cs.tileKey") || ""; }
     catch (e) { return ""; }          /* private mode, or storage disabled */
   }
+  /* ClearSky Energy Solutions' basemap key, issued for solela.csebuilders.com
+     and localhost. It is baked in rather than left to config so that every
+     user gets an unwatermarked map without anyone having to paste anything.
+
+     This is not a secret and cannot be one — a tile URL goes out of the
+     browser in plain sight, so any key used this way is public by
+     construction. What protects it is the domain registration, not secrecy.
+
+     TWO THINGS TO WATCH:
+       1. A tenant on a DIFFERENT hostname is not covered and will see the
+          watermark again. Add the domain at carto.com/basemaps/apikey — the
+          key stays the same, the allowed list grows.
+       2. The free tier is 5,000,000 tile requests a calendar month across
+          all domains. A tile is not a map load; one load pulls 30-60 tiles
+          and every pan pulls more. CARTO says they will make contact rather
+          than cut the service off, but it is worth watching as reps scale. */
+  var CS_TILE_KEY_DEFAULT = "cb1_2diy_1_571d8ef1a64c13a11870c259";
   var TILE_KEY = window.CS_TILE_KEY ||
                  (location.search.match(/[?&]tilekey=([^&]+)/) || [])[1] ||
-                 savedTileKey() || "";
+                 savedTileKey() || CS_TILE_KEY_DEFAULT;
   var tiles = null;
   function drawTiles() {
     if (tiles) { map.removeLayer(tiles); tiles = null; }
@@ -955,16 +974,25 @@
     document.getElementById("setOpen").onclick = function () { panel.className = "open"; };
     document.getElementById("setX").onclick = function () { panel.className = ""; };
 
-    /* Basemap key. Hidden entirely when a developer has already set
-       window.CS_TILE_KEY, because then it is not this person's problem. */
+    /* The key ships with the page, so this section is only needed on a
+       hostname the key was not registered for. Shown collapsed-by-default
+       wording rather than hidden entirely, because a watermarked tenant
+       needs somewhere to go. */
     var keySec = document.getElementById("setTileSec");
     if (window.CS_TILE_KEY) {
       keySec.style.display = "none";
     } else {
       var keyIn = document.getElementById("setTileKey");
       var keyMsg = document.getElementById("setTileMsg");
-      keyIn.value = TILE_KEY;
-      if (TILE_KEY) { keyMsg.className = "setKeyMsg good"; keyMsg.textContent = "Key saved. Map tiles are unwatermarked."; }
+      keyIn.value = TILE_KEY === CS_TILE_KEY_DEFAULT ? "" : TILE_KEY;
+      if (TILE_KEY === CS_TILE_KEY_DEFAULT) {
+        keyMsg.className = "setKeyMsg good";
+        keyMsg.textContent = "Using the ClearSky key. Only change this if the " +
+          "map is watermarked on this domain.";
+      } else if (TILE_KEY) {
+        keyMsg.className = "setKeyMsg good";
+        keyMsg.textContent = "Using a key saved in this browser.";
+      }
       document.getElementById("setTileSave").onclick = function () {
         var v = keyIn.value.replace(/\s+/g, "");
         try {
@@ -976,12 +1004,12 @@
             "Add ?tilekey=" + v + " to the address instead.";
           return;
         }
-        TILE_KEY = v;
+        TILE_KEY = v || CS_TILE_KEY_DEFAULT;
         drawTiles();
         keyMsg.className = "setKeyMsg good";
         keyMsg.textContent = v
           ? "Saved. If the watermark is still there, hard-refresh \u2014 the tiles are cached."
-          : "Key cleared. Tiles will be watermarked again.";
+          : "Cleared. Back to the ClearSky key.";
       };
     }
 

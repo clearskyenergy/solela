@@ -168,3 +168,71 @@ escaping of injected markup in site and rep names.
 **Not verified: visual layout.** No browser was available in the build
 environment, so the responsive breakpoints at 1080px and 760px are unexercised.
 Worth a look on a phone before it goes to the client.
+
+
+---
+
+## Site Finder  (added)
+
+`/clearsky-sitefinder.html` — the browsing half of the same data the ComEd
+Capacity Finder reports on. Cards beside a live hosting-capacity map, ranked
+on **deliverable kW** rather than published headroom, with a circuit ledger
+that stops two reps selling the same wire twice.
+
+Both tools read the same sources and answer opposite questions:
+
+| | asks |
+|---|---|
+| ComEd Capacity Finder | what is the capacity at **this** address |
+| Site Finder | which of **these hundred** addresses do I call |
+
+### What was changed in this repo
+
+- `index.html` — Site Finder tab, added to `tools` for both workspaces, and
+  the tab href stamped with `?org=`.
+- `vercel.json` — rewrites for the page and its three shared files.
+- `ci-industrial.js` and `ilshines-sites.js` were already here; the Site Finder
+  reads the same two bundles for its optional map layers. These stay local on
+  purpose — `DATA_HOSTS` tries same-origin first, so a local copy is the fast
+  path.
+
+### The shared files are NOT copied into this repo, deliberately
+
+`clearsky-sitefinder.html`, `omega-capacity-ledger.js`, `omega-comed-layers.js`
+and `omega-listings-source.js` are served from `tools.csebuilders.com` through
+the rewrites. They are not in this repo, so a platform update reaches Solela
+without a tenant deploy.
+
+**Vercel checks the filesystem BEFORE rewrites.** A local copy of any of those
+filenames would be served instead and the rewrite would never fire — silently,
+with no error, and the next person to edit the shared file would find their
+change had no effect here.
+
+⚠ That is already true of `comed-capacity.html`. There is a copy in this repo
+**and** a rewrite pointing at the shared deployment. The local copy wins, so
+this tenant is running a fork and the rewrite below it is dead. Worth
+reconciling: either delete the local file and let the rewrite serve the shared
+one, or delete the rewrite and own the fork explicitly. Leaving both means the
+question of which file is live is decided by a routing rule nobody remembers.
+
+### ?org= is not optional
+
+Circuit claims are written to `capacityAllocations`, keyed on the org. Without
+`?org=chileasing.com` a rep signing in from `csebuilders.com` would file holds
+against their own domain instead of Solela's, and the two would never see each
+other's claims — which is the exact failure the tool exists to prevent. The tab
+href is stamped in `paintUser()` alongside the Capacity and Site Map tabs.
+
+### Firestore
+
+Needs the `capacityAllocations` block merged into the live rules (see
+`firestore-capacity.rules`). Until it is deployed the tool signs in fine and
+then shows **Local only — claims not shared** with the reason in the tooltip,
+rather than pretending the ledger is working.
+
+### Sign-in
+
+The tool gates on Firebase auth before anything renders. A rep who has read a
+circuit as free, called the customer, and only then found they were never
+signed in has already done the damage. The name on a claim comes from the
+token and cannot be typed.

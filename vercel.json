@@ -7,14 +7,36 @@
     {
       "source": "/comed-capacity.html",
       "destination": "https://tools.csebuilders.com/comed-capacity.html"
+    },
+    {
+      "source": "/clearsky-sitefinder.html",
+      "destination": "https://tools.csebuilders.com/clearsky-sitefinder.html"
+    },
+    {
+      "source": "/omega-capacity-ledger.js",
+      "destination": "https://tools.csebuilders.com/omega-capacity-ledger.js"
+    },
+    {
+      "source": "/omega-comed-layers.js",
+      "destination": "https://tools.csebuilders.com/omega-comed-layers.js"
+    },
+    {
+      "source": "/omega-listings-source.js",
+      "destination": "https://tools.csebuilders.com/omega-listings-source.js"
     }
   ],
   "headers": [
     {
       "source": "/(.*\\.pptx)",
       "headers": [
-        { "key": "Content-Type", "value": "application/vnd.openxmlformats-officedocument.presentationml.presentation" },
-        { "key": "Access-Control-Allow-Origin", "value": "*" }
+        {
+          "key": "Content-Type",
+          "value": "application/vnd.openxmlformats-officedocument.presentationml.presentation"
+        },
+        {
+          "key": "Access-Control-Allow-Origin",
+          "value": "*"
+        }
       ]
     }
   ]

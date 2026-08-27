@@ -302,6 +302,10 @@ window._omegaReady = function(){
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 2 3 14h9l-1 8 10-12h-9z"/></svg>
         ComEd Capacity
       </a>
+      <a class="tb-tab" id="tab-sitefinder" href="/clearsky-sitefinder.html">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6l6-3 6 3 6-3v15l-6 3-6-3-6 3z"/><path d="M9 3v15M15 6v15"/></svg>
+        Site Finder
+      </a>
       <a class="tb-tab" id="tab-editor" href="/editor.html">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 7h20v14H2z"/><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/></svg>
         Site Map
@@ -438,7 +442,7 @@ var WORKSPACES = {
     clientName: 'Solela LLC',
     accountTier: 'Enterprise',
     allowedDomain: 'chileasing.com',
-    tools: ['editor', 'comed']
+    tools: ['editor', 'comed', 'sitefinder']
   },
   /* ClearSky internal — for support and QA against the same data. */
   'csebuilders.com': {
@@ -446,7 +450,7 @@ var WORKSPACES = {
     clientName: 'Solela LLC',
     accountTier: 'Internal',
     allowedDomain: 'csebuilders.com',
-    tools: ['editor', 'comed']
+    tools: ['editor', 'comed', 'sitefinder']
   }
 };
 
@@ -529,6 +533,14 @@ function showApp(user){
   if (ed) ed.href = '/editor.html?org=' + encodeURIComponent(currentOrg);
   var cap = document.getElementById('tab-capacity');
   if (cap) cap.href = '/comed-capacity.html?org=' + encodeURIComponent(currentOrg);
+  /* Site Finder MUST carry ?org= for the same reason the other two do: it
+     writes circuit claims to capacityAllocations, and those documents are
+     keyed on the org. Without it a rep on csebuilders.com would file holds
+     against their own domain instead of Solela's, and the two would never
+     see each other's claims — which is the one failure this tool exists to
+     prevent. */
+  var sf = document.getElementById('tab-sitefinder');
+  if (sf) sf.href = '/clearsky-sitefinder.html?org=' + encodeURIComponent(currentOrg);
 }
 
 function firstName(n){ return (n||'').split(' ')[0] || 'there'; }

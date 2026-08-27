@@ -630,23 +630,58 @@
 
      So: request everything, uppercase the keys, and pick. Same approach the
      Capacity Finder uses, for the same reason. */
+  /* ComEd's own popup labels, so the card reads the same words the utility
+     uses. "Estimated Net Load Capacity" is the figure this tool has been
+     calling BESS hosting capacity — same number, ComEd's name for it. */
+  M.COMED_LABELS = {
+    BESS_HC: "Estimated Net Load Capacity",
+    PV_HC_KW: "Estimated Net Generation Capacity",
+    EV_HC_KW: "Estimated Net Load Capacity (EV)",
+    FEEDER_Q: "Feeder DER in Queue",
+    SS_N: "Substation",
+    FEEDER: "Feeder",
+    BUFF_DIST: "Buffer distance"
+  };
+
   function interpret(attrs) {
     if (!attrs) return null;
     var k = {}, p;
     for (p in attrs) if (attrs.hasOwnProperty(p)) k[p.toUpperCase()] = attrs[p];
     function n(v) { var x = parseFloat(v); return isNaN(x) ? null : x; }
     function co(a, b) { return (a != null && a !== "") ? a : b; }
+
+    /* THE FEEDER NAME IS NOT NECESSARILY IN A FIELD CALLED "Feeder".
+       ComEd's own viewer shows "Feeder: F0297" at a point where reading the
+       first feeder-ish attribute yields "Z13733" — a different identifier
+       for the same circuit. One of them is an internal key and the other is
+       the name ComEd will recognise on a phone call, and quoting the wrong
+       one wastes an interconnection enquiry.
+
+       So candidates are tried in order of how likely they are to be the
+       PUBLISHED name, and the whole attribute set is carried on the record
+       so the card can show exactly what ComEd returned. */
+    var feeder = "";
+    var cands = ["FEEDER_NAME", "FEEDERNAME", "FDR_NAME", "FEEDER_NO", "FEEDER_NUM",
+                 "FDR_NUM", "FDR", "CIRCUIT", "CIRCUIT_ID", "CKT", "CKT_NAME",
+                 "FEEDER", "FEEDER_N", "FEEDER_ID"];
+    for (var ci = 0; ci < cands.length; ci++) {
+      if (k[cands[ci]] != null && String(k[cands[ci]]).trim() !== "") {
+        feeder = String(k[cands[ci]]).trim();
+        break;
+      }
+    }
     var q = n(k.FEEDER_Q);
     return {
-      a: attrs,
+      a: attrs,            /* ComEd's record, verbatim, for display */
       rings: [],
-      feeder: String(co(k.FEEDER, co(k.FEEDER_N, "")) || ""),
+      feeder: feeder,
       sub: k.SS_N == null ? "" : String(k.SS_N),
       queue: q == null ? 0 : q,
       bess: n(k.BESS_HC),
       pv: n(k.PV_HC_KW),
       ev: n(k.EV_HC_KW),
-      buff: n(k.BUFF_DIST)
+      buff: n(k.BUFF_DIST),
+      refreshed: k.IN_QUEUE_DATA_REFRESH_DATE || k.QUEUE_REFRESH || k.REFRESH_DATE || null
     };
   }
 

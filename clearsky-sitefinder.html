@@ -2364,6 +2364,45 @@
      reads one layout whether the site came off a list or out of the search
      box. It reuses the drawer's circuit block by handing it a record shaped
      like a property with no building on it. */
+  /* ComEd's record for this point, exactly as the service returned it.
+
+     This exists because a derived field can be derived from the wrong
+     column. ComEd's own viewer shows "Feeder: F0297" where this tool read
+     "Z13733" — same feature, same substation, same kW, different identifier.
+     Guessing which attribute holds the published name has now cost several
+     rounds, so the card shows ALL of them and a rep can read the one ComEd
+     will recognise on the phone.
+
+     Labels follow ComEd's own popup wording where we know it, so the card
+     and the utility's map say the same words about the same number. */
+  function comedRecordHtml(v) {
+    var row = v && v.rows && v.rows[0];
+    var a = row && row.a;
+    if (!a) return "";
+    var L = LAY.COMED_LABELS || {};
+    var keys = [], p;
+    for (p in a) if (a.hasOwnProperty(p)) keys.push(p);
+    if (!keys.length) return "";
+    keys.sort();
+    var out = "";
+    for (var i = 0; i < keys.length; i++) {
+      var raw = a[keys[i]];
+      if (raw == null || raw === "") continue;
+      if (/^(objectid|globalid|shape)/i.test(keys[i])) continue;
+      var label = L[keys[i].toUpperCase()] || keys[i];
+      out += g(esc(label), '<small>' + esc(String(raw)) + '</small>');
+    }
+    return out
+      ? '<div class="sec"><h4>ComEd\u2019s published record</h4>' +
+        '<div class="grid2">' + out + '</div>' +
+        '<p class="note">Every field ComEd returned for this point, unmodified. ' +
+        'If the feeder shown above does not match what ComEd\u2019s own map says, ' +
+        'the identifier is in one of these \u2014 use that one when you call them.' +
+        (v.covering > 1 ? " " + v.covering + " circuits cover this point; this is " +
+          "the one with the most headroom." : "") + '</p></div>'
+      : "";
+  }
+
   function showViability(v, lat, lon) {
     var short = String(v.label).split(",").slice(0, 2).join(",");
     head(v.headline, v.why);
@@ -2421,6 +2460,7 @@
       '</div>' +
       '<div class="sec"><h4>How this circuit was matched</h4>' +
         '<p class="note">' + esc(matchLine(v)) + '</p></div>' +
+      comedRecordHtml(v) +
       parcelBlockHtml(v.parcel) +
       loadBlockHtml(lat, lon) +
       '<div class="sec"><h4>Other developers in the queue</h4>' +

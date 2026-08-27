@@ -647,12 +647,28 @@
   function viabilityAt(lat, lon, label, cb) {
     LAY.probePoint(lat, lon, function (err, res) {
       if (err || !res || !res.rows.length) {
-        cb({ ok: false, key: "offterritory", label: label, feederId: null,
-             headline: "No ComEd circuit published here",
-             why: "ComEd returned no hosting-capacity feature at this point, on " +
-                  "any of its published layers. That is not the same as no " +
-                  "service \u2014 ComEd publishes capacity for some circuits and " +
-                  "not others. Confirm the serving feeder with the utility." });
+        /* Every layer erroring is a broken tool, not a dead site. The block
+           layers tile the whole territory, so if even layer 71 did not
+           answer, the service refused us — and saying "no capacity here"
+           would tell a rep to walk away from a site that may be fine. */
+        var broke = res && res.serviceFailed;
+        cb({ ok: false, key: broke ? "serviceerror" : "offterritory",
+             label: label, feederId: null,
+             errors: res ? res.errors : null,
+             headline: broke ? "Could not reach ComEd" : "No ComEd circuit published here",
+             why: broke
+               ? "Every ComEd layer refused or failed to answer, including the " +
+                 "territory-wide block layers \u2014 which cover every point in " +
+                 "the service area. So this is NOT a site without capacity; it " +
+                 "is a lookup that did not complete. Most likely the service " +
+                 "name has rotated (it carries a month and refreshes quarterly) " +
+                 "or the proxy is down. Do not treat this address as " +
+                 "disqualified." + (res && res.errors && res.errors.length
+                   ? " Reported: " + res.errors.join("; ") : "")
+               : "ComEd returned no hosting-capacity feature at this point, on " +
+                 "any of its published layers. That is not the same as no " +
+                 "service \u2014 ComEd publishes capacity for some circuits and " +
+                 "not others. Confirm the serving feeder with the utility." });
         return;
       }
       var f = res.rows[0];
@@ -831,6 +847,24 @@
       ST.rows.push(r);
       ST.byId[r.id] = r;
     }
+
+    /* Metered energy arrives after the cards are already on screen. That is
+       deliberate: a benchmarking round-trip must never hold up results a rep
+       could be reading. Rows that match get re-enriched and re-scored in
+       place, and the header says how many were upgraded from an estimate to
+       a measurement. */
+    fetchBenchmark(bounds(), function (idx) {
+      if (!idx) return;
+      var hit = applyBenchmark(ST.rows, idx), i;
+      if (!hit) return;
+      for (i = 0; i < ST.rows.length; i++) enrich(ST.rows[i]);
+      var s = document.getElementById("resS");
+      s.textContent += " " + hit.toLocaleString() +
+        (hit === 1 ? " site has" : " sites have") +
+        " metered energy from Chicago's benchmarking data rather than a " +
+        "modelled estimate.";
+      render();
+    });
   }
 
   /* --------------------------------------------------------------- sizing
@@ -851,6 +885,176 @@
                  "Flex":0.50,"Retail":0.45,"Office":0.50,"Data Center":0.85,
                  "Institutional":0.42,"Multifamily":0.55,"Vacant Land":0,"Other":0.50 };
   var DEMAND_LO = 8, DEMAND_HI = 14;   /* $/kW-month, ComEd C&I delivery + capacity */
+
+  /* ══════════════════════════════════════════════════════════════════════
+     METERED BUILDING ENERGY
+
+     Everything else on this page models annual kWh from floor area times an
+     EUI for the property type. That is a screening estimate and it is
+     labelled as one. Chicago's Energy Benchmarking ordinance publishes the
+     real thing — actual metered electricity and gross floor area, per
+     building, per year — and where a parcel matches a benchmarked building
+     the modelled figure should get out of the way.
+
+     TWO LIMITS, both of which have to stay visible rather than being papered
+     over. The ordinance covers buildings at or above 50,000 sq ft, so most
+     parcels will never match. And it is City of Chicago only: DuPage, Will,
+     Kane and the rest of the territory stay modelled forever. A map where
+     half the records are measured and half are estimated, with nothing
+     distinguishing them, is worse than one where all are estimated — so
+     `src` carries "metered" and the score weights it accordingly.
+     ══════════════════════════════════════════════════════════════════════ */
+  var PROXY_ROOT = window.CS_PROXY_ROOT ||
+                   "https://comed-proxy.clearsky-omega.workers.dev";
+
+  /* Address normalisation, ported verbatim in behaviour from the Capacity
+     Finder. Benchmarking addresses carry unit detail the assessor's do not
+     ("1200 W FULTON ST STE 300"), and direction and street-type words appear
+     inconsistently, so both sides are reduced to number + core street words
+     before comparing. */
+  var ADIRS = { N:1,S:1,E:1,W:1,NE:1,NW:1,SE:1,SW:1,NORTH:1,SOUTH:1,EAST:1,WEST:1,
+                NORTHEAST:1,NORTHWEST:1,SOUTHEAST:1,SOUTHWEST:1 };
+  var ATYPES = { ST:1,STREET:1,AVE:1,AV:1,AVENUE:1,RD:1,ROAD:1,BLVD:1,BOULEVARD:1,
+                 DR:1,DRIVE:1,LN:1,LANE:1,CT:1,COURT:1,PL:1,PLACE:1,PKWY:1,PARKWAY:1,
+                 HWY:1,HIGHWAY:1,TER:1,TERRACE:1,CIR:1,CIRCLE:1,WAY:1,SQ:1,SQUARE:1,
+                 EXPY:1,EXPRESSWAY:1 };
+  var AUNIT = /\b(STE|SUITE|UNIT|APT|APARTMENT|FL|FLR|FLOOR|FLOORS|RM|ROOM|BLDG|BUILDING|LOT|SPC|SPACE|BSMT|BASEMENT|REAR|FRNT|FRONT|LOWER|UPPER|PH|TRLR|DEPT|OFC|OFFICE|#)\b/;
+
+  function stripUnit(s) {
+    var t = String(s == null ? "" : s).toUpperCase();
+    var m = t.match(AUNIT);
+    /* "1ST FLOOR" / "2 FL": the ordinal belongs to the unit, not the street.
+       Cut it ONLY here, immediately before a unit marker — Chicago street
+       names are frequently ordinals (87TH ST, 1ST AVE) and stripping those
+       anywhere else would break far more than it fixes. */
+    if (m && m.index > 0) {
+      t = t.slice(0, m.index).replace(/\s+\d+(ST|ND|RD|TH)?\s*$/, "");
+    }
+    return t.trim();
+  }
+  /* Returns BOTH a directional key and a bare one.
+
+     The Capacity Finder's version dropped the direction whenever it sat first
+     or last, which makes "1200 W Fulton" and "1200 E Fulton" the same key —
+     and in Chicago those are a mile apart on opposite sides of State. Joining
+     metered energy across that would put one building's consumption on
+     another building's card, which is the failure this project treats as
+     worse than having no data at all.
+
+     But the direction genuinely is missing from some sources, so dropping it
+     entirely would lose real matches. Hence both: match on the directional
+     key first, and fall back to the bare one ONLY where the bare key is
+     unambiguous — i.e. exactly one directional variant exists in the data. */
+  function addrKeys(num, street) {
+    num = String(num == null ? "" : num).trim().replace(/[^0-9].*$/, "");  /* 1450-52 -> 1450 */
+    if (!num) return null;
+    var w = stripUnit(street).replace(/[^A-Z0-9 ]/g, " ").split(/\s+/);
+    var core = [], dir = "", i, tk;
+    for (i = 0; i < w.length; i++) {
+      tk = w[i];
+      if (!tk) continue;
+      if (ADIRS[tk] && (i === 0 || i === w.length - 1)) { dir = dir || tk.charAt(0); continue; }
+      if (ATYPES[tk] && i > 0) continue;
+      core.push(tk);
+    }
+    if (!core.length) return null;
+    var bare = num + "|" + core.join(" ");
+    return { bare: bare, full: dir ? bare + "|" + dir : bare, dir: dir };
+  }
+  function keyFromFull(full) {
+    var s = String(full || "").trim();
+    var m = s.match(/^(\d+[A-Za-z]?(?:-\d+)?)\s+(.*)$/);
+    return m ? addrKeys(m[1], m[2].split(",")[0]) : null;
+  }
+  /* Look a record up against an index built by indexBy below. */
+  function bmLookup(idx, k) {
+    if (!k) return null;
+    if (idx.full[k.full]) return idx.full[k.full];
+    /* Bare fallback, but only where nothing else shares that bare key. */
+    if (idx.bareCount[k.bare] === 1) return idx.bare[k.bare];
+    return null;
+  }
+
+  function socrata(path, cb) {
+    var x = new XMLHttpRequest();
+    x.open("GET", PROXY_ROOT + "/socrata/" + path, true);
+    x.onreadystatechange = function () {
+      if (x.readyState !== 4) return;
+      var j = null;
+      try { j = JSON.parse(x.responseText); } catch (e) {}
+      cb(x.status >= 200 && x.status < 300 && j ? null : new Error("HTTP " + x.status), j);
+    };
+    x.send();
+  }
+
+  var BM = { year: null, rows: null, key: "", busy: false };
+
+  function fetchBenchmark(bbox, done) {
+    var k = [bbox.s, bbox.n, bbox.w, bbox.e].map(function (v) { return (+v).toFixed(3); }).join(",");
+    if (k === BM.key && BM.rows) { done(BM.rows); return; }
+    if (BM.busy) { done(null); return; }
+    BM.busy = true;
+
+    /* Newest reporting year only. The dataset is one row per building per
+       year back to 2014, and an old row understates a building that has
+       since expanded — the same historic-row trap as Cook's assessor data. */
+    function pull(yr) {
+      var where = "within_box(location, " + bbox.n + ", " + bbox.w + ", " +
+                  bbox.s + ", " + bbox.e + ")" + (yr ? " AND data_year='" + yr + "'" : "");
+      socrata("chibench?$where=" + encodeURIComponent(where) + "&$limit=20000",
+        function (err, j) {
+          BM.busy = false;
+          if (err || !j || !j.length) { BM.key = k; BM.rows = { full:{}, bare:{}, bareCount:{} }; done(BM.rows); return; }
+          /* Indexed twice: by directional key, and by bare key with a count
+             so an ambiguous bare match can be refused rather than guessed. */
+          var idx = { full: {}, bare: {}, bareCount: {} };
+          var n, r, key2, kbtu, sqft, rec;
+          for (n = 0; n < j.length; n++) {
+            r = j[n];
+            key2 = keyFromFull(r.address || r.Address || "");
+            if (!key2 || idx.full[key2.full]) continue;
+            kbtu = parseFloat(r.electricity_use || r.electricity_use_kbtu);
+            sqft = parseFloat(r.gross_floor_area || r.gross_floor_area_buildings);
+            rec = {
+              kwh: isNaN(kbtu) ? null : Math.round(kbtu / 3.412),
+              sqft: isNaN(sqft) ? null : sqft,
+              type: r.primary_property_type || "",
+              star: r.energy_star_score || null,
+              year: yr
+            };
+            idx.full[key2.full] = rec;
+            idx.bare[key2.bare] = rec;
+            idx.bareCount[key2.bare] = (idx.bareCount[key2.bare] || 0) + 1;
+          }
+          BM.key = k; BM.rows = idx;
+          done(idx);
+        });
+    }
+    if (BM.year) { pull(BM.year); return; }
+    socrata("chibench?$select=data_year&$order=data_year DESC&$limit=1",
+      function (e0, j0) {
+        BM.year = (!e0 && j0 && j0.length && j0[0].data_year) ? j0[0].data_year : null;
+        pull(BM.year);
+      });
+  }
+
+  /* Overwrite the modelled figure where a real one exists, and say so. */
+  function applyBenchmark(rows, idx) {
+    if (!idx) return 0;
+    var hit = 0, i, m;
+    for (i = 0; i < rows.length; i++) {
+      m = bmLookup(idx, keyFromFull(rows[i].addr));
+      if (!m || m.kwh == null) continue;
+      rows[i].annualKwh = { value: m.kwh, src: "metered" };
+      /* Benchmarked floor area is measured too, and it is usually the better
+         number — parcels carry acreage, never building area. */
+      if (m.sqft) rows[i].sqft = m.sqft;
+      if (m.star) rows[i].energyStar = m.star;
+      rows[i].bmYear = m.year;
+      hit++;
+    }
+    return hit;
+  }
 
   function enrich(r) {
     var lf = r.loadFactor || EUI_LF[r.type] || 0.5;
@@ -1206,23 +1410,42 @@
     var circ = document.getElementById("fCirc").value;
     var sort = document.getElementById("fSort").value;
 
+    /* Why rows were dropped, so "0 of 15" can explain itself instead of
+       looking like an empty corridor. */
+    var cut = { kw: 0, sf: 0, type: 0, circ: 0, sfUnknown: 0 };
+
     var out = ST.rows.filter(function (r) {
-      if ((r.sz.kw || 0) < minKw) return false;
-      if (minSf && (r.sqft || 0) < minSf) return false;
-      if (type === "__ci" && !/Warehouse|Industrial|Manufacturing|Cold Storage|Flex/.test(r.type)) return false;
-      else if (type && type !== "__ci" && r.type !== type) return false;
-      if (circ === "sellable" && !(r.circ.sellable > 0)) return false;
-      if (circ === "open" && r.cst.key !== "open") return false;
-      if (circ === "partial" && r.cst.key !== "partial") return false;
-      if (circ === "closed" && r.cst.key !== "closed" && r.cst.key !== "over") return false;
-      if (circ === "mine" && !r.mine.length) return false;
+      if ((r.sz.kw || 0) < minKw) { cut.kw++; return false; }
+      /* UNKNOWN IS NOT ZERO. Parcels carry acreage, never building area —
+         estimateSqftFromAcres is off precisely so a modelled figure is not
+         mistaken for a measured one — so a real parcel has sqft null. The
+         old test read that null as 0 and dropped every real record against
+         the default 20,000 minimum, which is how a corridor full of
+         industrial parcels rendered as "no matches". A size filter can only
+         exclude a building it knows the size of. */
+      if (minSf) {
+        if (r.sqft == null) cut.sfUnknown++;
+        else if (r.sqft < minSf) { cut.sf++; return false; }
+      }
+      if (type === "__ci" && !/Warehouse|Industrial|Manufacturing|Cold Storage|Flex/.test(r.type)) { cut.type++; return false; }
+      else if (type && type !== "__ci" && r.type !== type) { cut.type++; return false; }
+      if (circ === "sellable" && !(r.circ.sellable > 0)) { cut.circ++; return false; }
+      if (circ === "open" && r.cst.key !== "open") { cut.circ++; return false; }
+      if (circ === "partial" && r.cst.key !== "partial") { cut.circ++; return false; }
+      if (circ === "closed" && r.cst.key !== "closed" && r.cst.key !== "over") { cut.circ++; return false; }
+      if (circ === "mine" && !r.mine.length) { cut.circ++; return false; }
       return true;
     });
+    ST.cut = cut;
 
+    /* An unknown building size sorts to the BOTTOM rather than being treated
+       as zero, but the rows above it are still ordered by real size. Using 0
+       for unknown puts every real parcel below every demo record, which is
+       the same unknown-is-zero mistake the filter used to make. */
     var K = { kw: function (r) { return r.sz.kw || 0; },
               score: function (r) { return r.score; },
               head: function (r) { return r.circ.sellable || 0; },
-              sqft: function (r) { return r.sqft || 0; },
+              sqft: function (r) { return r.sqft == null ? -1 : r.sqft; },
               loadScore: function (r) { return r.loadScore; },
               load: function (r) { return r.peakKw || 0; } }[sort];
     out.sort(function (a, b) { return K(b) - K(a); });
@@ -1243,9 +1466,22 @@
       return;
     }
     if (!rows.length) {
-      head("0 of " + ST.rows.length + " match", "Nothing in this area clears the filters. Lower the minimum kW or widen the use type.");
+      /* Name the filter that did it. "None clear the filters" sends a rep
+         hunting through four controls; naming the one that cut 15 of 15
+         takes a second. */
+      var c = ST.cut || {}, worst = "", n = 0;
+      if (c.kw > n) { n = c.kw; worst = "the minimum kW"; }
+      if (c.sf > n) { n = c.sf; worst = "the minimum building size"; }
+      if (c.type > n) { n = c.type; worst = "the use type"; }
+      if (c.circ > n) { n = c.circ; worst = "the circuit filter"; }
+      var why = worst
+        ? worst.charAt(0).toUpperCase() + worst.slice(1) + " dropped " + n +
+          " of " + ST.rows.length + ". Widen it to see them."
+        : "Nothing in this area clears the filters.";
+      head("0 of " + ST.rows.length + " match", why);
       wrap.innerHTML = '<div class="empty"><h3>No matches</h3><p>The area has ' +
-        ST.rows.length + ' properties, but none clear the current filters.</p></div>';
+        ST.rows.length + ' properties, but none clear the current filters. ' +
+        esc(why) + '</p></div>';
       drawMarkers([]);
       return;
     }
@@ -1522,16 +1758,19 @@
     head(v.headline, v.why);
     if (!v.feederId) {
       document.getElementById("dAddr").textContent = short;
-      document.getElementById("dSub").textContent = "No circuit published here";
+      document.getElementById("dSub").textContent =
+        v.key === "serviceerror" ? "Lookup failed \u2014 not a verdict"
+                                 : "No circuit published here";
       document.getElementById("dBody").innerHTML =
         '<div class="sec"><p class="note">' + esc(v.why) + '</p></div>' +
+        (v.key === "serviceerror" ? '' :
         '<div class="sec"><h4>What to do with this</h4>' +
         '<p class="note">ComEd was asked directly about this point and returned ' +
         'nothing on any published layer. Two things to check before concluding ' +
         'there is no service: whether the address geocoded to the right building, ' +
         'and whether the site is inside ComEd territory at all. If both hold, ' +
         'this circuit simply is not in the published set \u2014 ask ComEd for the ' +
-        'feeder serving the meter.</p></div>';
+        'feeder serving the meter.</p></div>');
       document.getElementById("drawer").className = "open";
       return;
     }

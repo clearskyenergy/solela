@@ -529,6 +529,36 @@
      next feeder over. */
   M.PROBE_DEG = 0.00055;
 
+  /* Read capacity out of whatever attributes a layer actually returns.
+
+     Field names are NOT the same across the five grains. Layer 75 carries
+     Feeder and SS_N because it is a circuit; the block layers 71-74 carry an
+     aggregate and no feeder at all. Asking for a named field list therefore
+     ERRORS on the block layers rather than returning nothing, which is a
+     different thing entirely and used to be indistinguishable here.
+
+     So: request everything, uppercase the keys, and pick. Same approach the
+     Capacity Finder uses, for the same reason. */
+  function interpret(attrs) {
+    if (!attrs) return null;
+    var k = {}, p;
+    for (p in attrs) if (attrs.hasOwnProperty(p)) k[p.toUpperCase()] = attrs[p];
+    function n(v) { var x = parseFloat(v); return isNaN(x) ? null : x; }
+    function co(a, b) { return (a != null && a !== "") ? a : b; }
+    var q = n(k.FEEDER_Q);
+    return {
+      a: attrs,
+      rings: [],
+      feeder: String(co(k.FEEDER, co(k.FEEDER_N, "")) || ""),
+      sub: k.SS_N == null ? "" : String(k.SS_N),
+      queue: q == null ? 0 : q,
+      bess: n(k.BESS_HC),
+      pv: n(k.PV_HC_KW),
+      ev: n(k.EV_HC_KW),
+      buff: n(k.BUFF_DIST)
+    };
+  }
+
   M.probePoint = function (lat, lon, cb) {
     if (lat == null || lon == null) { cb(new Error("no point given")); return; }
     var dLat = M.PROBE_DEG;
@@ -537,12 +567,20 @@
       xmin: lon - dLon, ymin: lat - dLat, xmax: lon + dLon, ymax: lat + dLat,
       spatialReference: { wkid: 4326 }
     });
-    var order = M.POINT_LAYERS.slice(), i = 0;
+    var order = M.POINT_LAYERS.slice(), i = 0, errs = [];
 
     (function tryNext() {
       if (i >= order.length) {
+        /* EVERY layer failing is not the same as every layer being empty.
+           The block layers tile the whole territory, so a point in ComEd's
+           service area that matches nothing on layer 71 means the SERVICE
+           did not answer — a refused request, a rotated service name, a
+           proxy that is down. Reporting that as "ComEd publishes nothing
+           here" tells a rep a site is dead when the tool is simply broken,
+           which is the worst answer this thing can give. */
         cb(null, { rows: [], layerId: null, addressResolved: false,
-                   grain: "", tried: order });
+                   grain: "", tried: order, errors: errs,
+                   serviceFailed: errs.length === order.length });
         return;
       }
       var id = order[i++];
@@ -550,40 +588,37 @@
         "&geometry=" + encodeURIComponent(env) +
         "&geometryType=esriGeometryEnvelope&inSR=4326&outSR=4326" +
         "&spatialRel=esriSpatialRelIntersects" +
-        "&outFields=" + encodeURIComponent("OBJECTID,Feeder,SS_N,BESS_HC,PV_HC_kW,EV_HC_kW,Feeder_Q") +
-        "&returnGeometry=false&resultRecordCount=25";
+        /* Everything, because the grains do not share a schema. */
+        "&outFields=*&returnGeometry=false&resultRecordCount=25";
 
       getJSON(url, function (err, j) {
-        if (err || !j || j.error || !j.features || !j.features.length) {
-          diag("probe L" + id + ": " +
-               (err ? err.message : (j && j.error ? "service " + j.error.code : "0 features")));
+        if (err || !j || j.error) {
+          var msg = err ? err.message : ("service " + (j.error.code || "?") +
+                     (j.error.message ? " " + j.error.message : ""));
+          errs.push("L" + id + ": " + msg);
+          diag("probe L" + id + ": " + msg);
           tryNext();
           return;
         }
-        var rows = [], n, a, q;
-        for (n = 0; n < j.features.length; n++) {
-          a = j.features[n].attributes || {};
-          q = parseFloat(a.Feeder_Q); if (isNaN(q)) q = 0;
-          rows.push({
-            a: a, rings: [],
-            feeder: String(a.Feeder == null ? "" : a.Feeder),
-            sub: a.SS_N == null ? "" : String(a.SS_N),
-            queue: q,
-            bess: parseFloat(a.BESS_HC),
-            pv: parseFloat(a.PV_HC_kW),
-            ev: parseFloat(a.EV_HC_kW)
-          });
+        if (!j.features || !j.features.length) {
+          /* A real, successful "nothing here" — recorded as such, not as an
+             error, so the caller can tell the two apart. */
+          diag("probe L" + id + ": 0 features");
+          tryNext();
+          return;
         }
-        /* Buffers overlap, so several feeders can cover one parcel. Best
-           headroom first — the same rule feederAt and build_ci_bundles.py
-           use, so the map, the harvest and this probe cannot disagree. */
+        var rows = [], n2, row;
+        for (n2 = 0; n2 < j.features.length; n2++) {
+          row = interpret(j.features[n2].attributes || {});
+          if (row) rows.push(row);
+        }
         rows.sort(function (x, y) { return netOf(y) - netOf(x); });
         diag("probe L" + id + ": " + rows.length + " circuit(s)");
         cb(null, {
           rows: rows, layerId: id,
           addressResolved: !!(GRAIN[id] && GRAIN[id].addressResolved),
           grain: (GRAIN[id] && GRAIN[id].label) || "unknown grain",
-          tried: order.slice(0, i)
+          tried: order.slice(0, i), errors: errs, serviceFailed: false
         });
       });
     })();

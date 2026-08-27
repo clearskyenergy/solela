@@ -382,7 +382,8 @@
     <label for="fSort">Sort</label>
     <select id="fSort">
       <option value="kw">Deliverable kW</option>
-      <option value="score">Deal score</option>
+      <option value="score">Deal score · battery</option>
+      <option value="loadScore">Deal score · large load</option>
       <option value="head">Circuit headroom</option>
       <option value="sqft">Building size</option>
       <option value="load">Peak load</option>
@@ -869,21 +870,64 @@
     r.mine = L.allocationsForSite(r.id);
     r.saveLo = sz.kw ? sz.kw * DEMAND_LO * 12 : null;
     r.saveHi = sz.kw ? sz.kw * DEMAND_HI * 12 : null;
+    r.grainFactor = grainFactor();
     r.score = score(r);
+    r.loadScore = loadScore(r);
     return r;
   }
 
   /* Weighted on what can actually be delivered and sold, not on how big the
      building is. A large load on a full circuit is not a deal, and neither
-     is an empty circuit next to a small load. */
+     is an empty circuit next to a small load.
+
+     GRAIN CAPS THE SCORE. ComEd publishes the same capacity at five grains
+     and only layer 75 is the circuit serving a parcel; 71-74 report the best
+     circuit anywhere in a block up to 36 square miles. A 900 kW figure read
+     off a section block is not this site's 900 kW, so it cannot produce a
+     qualified score. Without this cap a rep zoomed out to the metro sees a
+     screen of high scores that are block maxima, calls the top ten, and
+     finds the capacity belongs to a substation two miles away. */
+  function grainFactor() {
+    var s = LAY.hostingState ? LAY.hostingState() : null;
+    if (!s || !s.layerId) return 1;
+    if (s.addressResolved) return 1;
+    /* Coarser blocks are progressively less about this parcel. */
+    return { 74: 0.6, 73: 0.45, 72: 0.3, 71: 0.15 }[s.layerId] || 0.3;
+  }
+
   function score(r) {
     var s = 0;
     s += Math.min((r.sz.kw || 0) / 1200, 1) * 45;              /* deliverable now  */
     s += Math.min((r.peakKw || 0) / 2000, 1) * 20;             /* customer's peak  */
-    s += Math.min((r.circ.sellable || 0) / 4000, 1) * 15;     /* room to grow     */
+    s += Math.min((r.circ.sellable || 0) / 4000, 1) * 15;      /* room to grow     */
     s += r.sz.circuitLimited ? 0 : 10;                          /* not wire-capped  */
     s += /Warehouse|Industrial|Manufacturing|Cold Storage|Flex/.test(r.type) ? 10 : 3;
-    return Math.round(s);
+    /* A modelled load is a guess and a metered one is a measurement. Scoring
+       them identically is how an estimate gets quoted as a reading. */
+    if (r.annualKwh && r.annualKwh.src !== "metered") s *= 0.85;
+    return Math.round(s * r.grainFactor);
+  }
+
+  /* A SECOND score, deliberately not merged with the first.
+
+     Demand-charge storage and a large-load / data-centre siting play want
+     opposite things. The battery deal wants a big peak to shave and only
+     needs a few hundred kW of headroom. The large load wants raw megawatts
+     available and does not care about the existing peak at all — an empty
+     industrial parcel scores near zero as a battery deal and near the top as
+     a site to build on. Collapsing them into one number hides whichever the
+     rep is not currently looking for. */
+  function loadScore(r) {
+    var s = 0;
+    /* Raw headroom is most of it. 10 MW is a full mark. */
+    s += Math.min((r.circ.sellable || 0) / 10000, 1) * 55;
+    /* Land to build on. Acreage, not building area — the building is often
+       the thing you would demolish. */
+    s += Math.min((r.lotAcres || 0) / 20, 1) * 20;
+    s += /Industrial|Manufacturing|Vacant Land|Flex/.test(r.type) ? 15 : 4;
+    /* An existing large service means the site is already built for load. */
+    s += (r.service && r.service.kva >= 1000) ? 10 : 0;
+    return Math.round(s * r.grainFactor);
   }
 
   /* ══════════════════════════════════════════════════════════════════════
@@ -1179,6 +1223,7 @@
               score: function (r) { return r.score; },
               head: function (r) { return r.circ.sellable || 0; },
               sqft: function (r) { return r.sqft || 0; },
+              loadScore: function (r) { return r.loadScore; },
               load: function (r) { return r.peakKw || 0; } }[sort];
     out.sort(function (a, b) { return K(b) - K(a); });
     return out;
@@ -1315,7 +1360,11 @@
           ? '<div class="mt" style="margin-top:7px;font-family:var(--mono);font-size:11px">' +
             (shows("feeder") ? esc(r.feederId) + (r.sub ? ' \u00b7 ' + esc(r.sub) : '') : '') +
             (shows("feeder") && shows("score") ? ' &middot; ' : '') +
-            (shows("score") ? 'score ' + r.score : '') + '</div>'
+            (shows("score") ? 'score ' + r.score +
+              /* A capped score has to say it is capped, or it reads as a poor
+                 site rather than an unresolved one — and those get worked
+                 very differently. */
+              (r.grainFactor < 1 ? ' \u00b7 capped, block-grain' : '') : '') + '</div>'
           : '') +
         warn +
       '</div></article>';

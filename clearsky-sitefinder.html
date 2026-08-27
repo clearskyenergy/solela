@@ -867,6 +867,34 @@
       ST.byId[r.id] = r;
     }
 
+    /* Correct any ZIP-centroid pins before anything is attributed to them.
+       A record sitting on the centre of 60608 is on whatever circuit happens
+       to run under that point, which is not the circuit at its address. */
+    fixApproxPins(ST.rows, function (fixed) {
+      if (fixed) {
+        var i;
+        for (i = 0; i < ST.rows.length; i++) {
+          /* Re-join the circuit from the corrected position, then re-score. */
+          if (ST.rows[i].geoSrc) {
+            var hit = LAY.feederAt(ST.rows[i].lat, ST.rows[i].lon);
+            var cap = hit ? LAY.capacityOf(hit) : null;
+            ST.rows[i].feederId = hit ? (hit.feeder || null) : null;
+            ST.rows[i].sub = hit ? (hit.sub || "") : "";
+            if (cap && cap.nameplate != null) {
+              ST.rows[i].nameplate = cap.nameplate;
+              ST.rows[i].queue = cap.queue || 0;
+            }
+          }
+          enrich(ST.rows[i]);
+        }
+        var s = document.getElementById("resS");
+        s.textContent += " " + fixed.toLocaleString() +
+          (fixed === 1 ? " pin was" : " pins were") +
+          " on a ZIP centroid and have been geocoded to their street address.";
+        render();
+      }
+    });
+
     /* Metered energy arrives after the cards are already on screen. That is
        deliberate: a benchmarking round-trip must never hold up results a rep
        could be reading. Rows that match get re-enriched and re-scored in
@@ -1975,6 +2003,100 @@
     dropPin(e.latlng.lat, e.latlng.lng);
   });
 
+  /* ══════════════════════════════════════════════════════════════════════
+     PIN PRECISION
+
+     A record's coordinates decide three things: where the marker draws,
+     which circuit it is attributed to, and what a rep sees when they open
+     Google Maps. Getting them wrong is not a cosmetic problem — 2607 W 17th
+     Street rendered a mile and a half away at the 60608 ZIP centroid, on a
+     different circuit, in a different neighbourhood.
+
+     EDC listings are the source of this: many carry only a ZIP, so the feed
+     pins them to its centre and flags them `approx`. The listings bridge
+     already refuses to attribute a circuit to those, which was right but not
+     enough — the marker still drew, and it drew somewhere false.
+
+     So an approximate record gets geocoded from its own address, once, and
+     its position corrected. Census first because it is free, unlimited and
+     rooftop-accurate for US street addresses; Nominatim as the fallback.
+     If both fail the record keeps its ZIP centroid AND keeps saying so.
+     ══════════════════════════════════════════════════════════════════════ */
+  var GEO_CACHE = {}, geoBusy = 0;
+
+  function geocodeOne(addr, city, zip, cb) {
+    var key = (addr + "|" + city + "|" + zip).toLowerCase();
+    if (GEO_CACHE[key] !== undefined) { cb(GEO_CACHE[key]); return; }
+    if (!addr) { cb(null); return; }
+    var one = "https://geocoding.geo.census.gov/geocoder/locations/onelineaddress" +
+      "?address=" + encodeURIComponent(addr + ", " + (city || "") + " IL " + (zip || "")) +
+      "&benchmark=Public_AR_Current&format=json";
+    var x = new XMLHttpRequest();
+    x.open("GET", one, true);
+    x.timeout = 15000;
+    function fail() {
+      /* Nominatim fallback. One request, and only for records the feed
+         itself admits are imprecise — this is not a bulk geocode. */
+      var u = "https://nominatim.openstreetmap.org/search?format=json&limit=1&q=" +
+        encodeURIComponent(addr + ", " + (city || "Chicago") + ", IL " + (zip || ""));
+      var y = new XMLHttpRequest();
+      y.open("GET", u, true);
+      y.timeout = 15000;
+      y.onreadystatechange = function () {
+        if (y.readyState !== 4) return;
+        var j = null;
+        try { j = JSON.parse(y.responseText); } catch (e) {}
+        var hit = (j && j[0]) ? { lat: +j[0].lat, lon: +j[0].lon, src: "nominatim" } : null;
+        GEO_CACHE[key] = hit; cb(hit);
+      };
+      y.ontimeout = y.onerror = function () { GEO_CACHE[key] = null; cb(null); };
+      y.send();
+    }
+    x.onreadystatechange = function () {
+      if (x.readyState !== 4) return;
+      var j = null;
+      try { j = JSON.parse(x.responseText); } catch (e) {}
+      var m = j && j.result && j.result.addressMatches && j.result.addressMatches[0];
+      if (m && m.coordinates) {
+        var hit = { lat: +m.coordinates.y, lon: +m.coordinates.x, src: "census" };
+        GEO_CACHE[key] = hit; cb(hit);
+      } else fail();
+    };
+    x.ontimeout = x.onerror = fail;
+    x.send();
+  }
+
+  /* Correct the approximate ones, a few at a time so a viewport full of
+     listings does not fire fifty requests at once. Re-attributes the circuit
+     afterwards, because the whole point is that the old one was for the
+     wrong place. */
+  function fixApproxPins(rows, done) {
+    var todo = [], i;
+    for (i = 0; i < rows.length; i++)
+      if (rows[i].approx && rows[i].addr && !rows[i].geoFixed) todo.push(rows[i]);
+    if (!todo.length) { done(0); return; }
+    var n = 0, k = 0, active = 0, LIMIT = 4;
+    (function pump() {
+      while (active < LIMIT && k < todo.length) {
+        (function (r) {
+          active++;
+          geocodeOne(r.addr, r.city, r.zip, function (hit) {
+            active--;
+            r.geoFixed = true;
+            if (hit) {
+              r.lat = hit.lat; r.lon = hit.lon;
+              r.approx = false;
+              r.geoSrc = hit.src;
+              n++;
+            }
+            if (k >= todo.length && active === 0) done(n); else pump();
+          });
+        })(todo[k++]);
+      }
+      if (!todo.length || (k >= todo.length && active === 0)) done(n);
+    })();
+  }
+
   function drawMarkers(rows) {
     markerLayer.clearLayers(); MARKERS = {};
     for (var i = 0; i < rows.length; i++) {
@@ -2321,23 +2443,58 @@
         'circuit for everyone on the team immediately.</div>' +
       '</div>');
 
-    /* -- property ------------------------------------------------------- */
+    /* -- property -------------------------------------------------------
+       Every row is always present, and a missing value reads "N/A" rather
+       than a dash. A dash is ambiguous — it could mean zero, or not
+       applicable, or nobody has loaded it yet. "N/A" says the field exists
+       and we do not have it, which is what a rep needs to know before
+       quoting anything from this card. Rows stay listed even when empty so
+       the panel shows the SHAPE of what will be there as sources come
+       online, rather than silently shrinking. */
     h.push('<div class="sec"><h4>Property</h4><div class="grid2">' +
-      g("Use", esc(r.subtype || r.type)) +
-      g("Building", r.sqft ? fmt(r.sqft) + " SF" : "\u2014") +
-      g("Lot", r.lotAcres ? r.lotAcres + " ac" : "\u2014") +
-      g("Built", r.yearBuilt || "\u2014") +
-      g("Assessed", r.assessedValue ? money(r.assessedValue) : "\u2014") +
+      /* Use is the property TYPE. It used to render `subtype`, which on an
+         EDC listing is the listing's own name — and that name is frequently
+         the street address, so the panel showed the address twice and never
+         showed the use at all. */
+      g("Use", esc(r.type || "N/A") +
+          (r.clsLabel ? ' <small>' + esc(r.clsLabel) + '</small>' : '')) +
+      g("Class code", r.cls ? esc(r.cls) : "N/A") +
+      g("Building", r.sqft ? fmt(r.sqft) + " SF" : "N/A") +
+      g("Lot", r.lotAcres ? r.lotAcres + " ac" : "N/A") +
+      g("Built", r.yearBuilt || "N/A") +
+      g("Assessed", r.assessedValue ? money(r.assessedValue) : "N/A") +
       g("Last sale", r.lastSale && r.lastSale.price
-        ? money(r.lastSale.price) + ' <small>' + esc(r.lastSale.date || "") + '</small>' : "\u2014") +
+        ? money(r.lastSale.price) + ' <small>' + esc(r.lastSale.date || "") + '</small>'
+        : "N/A") +
+      g("PIN", r.pin ? esc(r.pin) : (r.id && /^\d/.test(r.id) ? esc(r.id) : "N/A")) +
+      g("County", r.county ? esc(r.county) : "N/A") +
+      g("Coordinates", (r.lat != null && r.lon != null)
+        ? '<small>' + r.lat.toFixed(5) + ", " + r.lon.toFixed(5) + '</small>' : "N/A") +
+      /* Where the position came from, because everything else on this card
+         is derived from it — the circuit, the substation, the map pin. A
+         ZIP-centroid position can be a mile from the building and put the
+         site on the wrong feeder entirely. */
+      g("Position", r.approx
+          ? '<b style="color:var(--red)">ZIP centroid \u2014 not the building</b>'
+          : r.geoSrc === "census" ? "Geocoded \u00b7 US Census"
+          : r.geoSrc === "nominatim" ? "Geocoded \u00b7 OpenStreetMap"
+          : r.src === "comed" ? "Parcel centroid \u00b7 county assessor"
+          : "As supplied") +
       '</div></div>');
 
     /* -- load ----------------------------------------------------------- */
     h.push('<div class="sec"><h4>Energy</h4><div class="grid2">' +
-      g("Annual use", r.annualKwh ? fmt(r.annualKwh.value) + " kWh" : "\u2014") +
-      g("Source", r.annualKwh ? '<small>' + esc(r.annualKwh.src) + '</small>' : "\u2014") +
-      g("Load factor", r.lf ? r.lf.toFixed(2) : "\u2014") +
-      g("Estimated peak", r.peakKw ? fmt(r.peakKw) + " kW" : "\u2014") +
+      g("Annual use", r.annualKwh ? fmt(r.annualKwh.value) + " kWh" : "N/A") +
+      g("Source", r.annualKwh ? '<small>' + esc(r.annualKwh.src) + '</small>' : "N/A") +
+      g("Load factor", r.lf ? r.lf.toFixed(2) : "N/A") +
+      g("Estimated peak", r.peakKw ? fmt(r.peakKw) + " kW" : "N/A") +
+      g("Circuit", r.feederId ? esc(r.feederId) : "N/A") +
+      g("Substation", r.sub ? esc(r.sub) : "N/A") +
+      g("Circuit capacity", r.circ && r.circ.known ? fmt(r.circ.nameplate) + " kW" : "N/A") +
+      g("Free on circuit", r.circ && r.circ.known ? fmt(r.circ.sellable) + " kW" : "N/A") +
+      g("In queue", r.circ && r.circ.known ? fmt(r.circ.queue) + " kW" : "N/A") +
+      g("Battery size", r.sz && r.sz.kw != null
+        ? fmt(r.sz.kw) + " kW / " + fmt(r.sz.kwh) + " kWh" : "N/A") +
       '</div>' +
       (r.annualKwh && r.annualKwh.src !== "metered"
         ? '<div class="note">Consumption is <b>' + esc(r.annualKwh.src) + '</b> from building type and floor area, ' +

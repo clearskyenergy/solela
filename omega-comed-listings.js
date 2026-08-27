@@ -106,6 +106,21 @@
     var cap = LAY.capacityOf(f);
     rec.feederId = f.feeder || null;
     rec.sub = f.sub || "";
+    /* ComEd's record for this circuit, verbatim, on EVERY record — not only
+       on a searched point. The attributes are already in memory: attribIn
+       fetches layer 75 with outFields=*, so the whole published row for the
+       covering circuit is sitting right here and used to be discarded after
+       two fields were read off it.
+
+       It matters because a derived field can be derived from the wrong
+       column. ComEd's own viewer names a circuit F0297 where reading the
+       first feeder-ish attribute gives Z13733 — same feature, same
+       substation, same kilowatts, different identifier. Carrying the record
+       lets every card show the name ComEd will actually recognise. */
+    rec.comed = f.a || null;
+    rec.comedCovering = LAY.feedersAt ? LAY.feedersAt(rec.lat, rec.lon).length : 1;
+    rec.buffFt = f.buff != null ? f.buff : null;
+    rec.queueRefreshed = f.refreshed || null;
     if (cap && cap.nameplate != null) {
       /* Passed as nameplate + queue, NOT as a pre-netted figure. The ledger
          subtracts the queue itself and then subtracts our own claims on top;

@@ -2375,18 +2375,16 @@
 
      Labels follow ComEd's own popup wording where we know it, so the card
      and the utility's map say the same words about the same number. */
-  function comedRecordHtml(v) {
-    var row = v && v.rows && v.rows[0];
-    var a = row && row.a;
-    if (!a) return "";
+  function comedRecordHtml(attrs, covering) {
+    if (!attrs) return "";
     var L = LAY.COMED_LABELS || {};
     var keys = [], p;
-    for (p in a) if (a.hasOwnProperty(p)) keys.push(p);
+    for (p in attrs) if (attrs.hasOwnProperty(p)) keys.push(p);
     if (!keys.length) return "";
     keys.sort();
     var out = "";
     for (var i = 0; i < keys.length; i++) {
-      var raw = a[keys[i]];
+      var raw = attrs[keys[i]];
       if (raw == null || raw === "") continue;
       if (/^(objectid|globalid|shape)/i.test(keys[i])) continue;
       var label = L[keys[i].toUpperCase()] || keys[i];
@@ -2395,11 +2393,12 @@
     return out
       ? '<div class="sec"><h4>ComEd\u2019s published record</h4>' +
         '<div class="grid2">' + out + '</div>' +
-        '<p class="note">Every field ComEd returned for this point, unmodified. ' +
-        'If the feeder shown above does not match what ComEd\u2019s own map says, ' +
-        'the identifier is in one of these \u2014 use that one when you call them.' +
-        (v.covering > 1 ? " " + v.covering + " circuits cover this point; this is " +
-          "the one with the most headroom." : "") + '</p></div>'
+        '<p class="note">Every field ComEd returned for the circuit covering this ' +
+        'point, unmodified and in ComEd\u2019s own wording. If the circuit shown ' +
+        'above does not match ComEd\u2019s map, the identifier they use is one of ' +
+        'these \u2014 quote that one when you call.' +
+        (covering > 1 ? " " + covering + " circuits cover this point; this is the " +
+          "one with the most headroom." : "") + '</p></div>'
       : "";
   }
 
@@ -2460,7 +2459,7 @@
       '</div>' +
       '<div class="sec"><h4>How this circuit was matched</h4>' +
         '<p class="note">' + esc(matchLine(v)) + '</p></div>' +
-      comedRecordHtml(v) +
+      comedRecordHtml(v.rows && v.rows[0] ? v.rows[0].a : null, v.covering) +
       parcelBlockHtml(v.parcel) +
       loadBlockHtml(lat, lon) +
       '<div class="sec"><h4>Other developers in the queue</h4>' +
@@ -2528,6 +2527,8 @@
     /* Who else is standing on the wire comes BEFORE the filing history:
        a rep scanning a card needs the competitive picture before the
        paperwork trail. */
+    /* The utility's own record, on every card. */
+    h.push(comedRecordHtml(r.comed, r.comedCovering));
     h.push(peersHtml(r));
     h.push('<div class="sec"><h4>Interconnection activity on this circuit</h4>');
     if (!live.length && !st.queue) {
@@ -2633,9 +2634,20 @@
       g("Estimated peak", r.peakKw ? fmt(r.peakKw) + " kW" : "N/A") +
       g("Circuit", r.feederId ? esc(r.feederId) : "N/A") +
       g("Substation", r.sub ? esc(r.sub) : "N/A") +
-      g("Circuit capacity", r.circ && r.circ.known ? fmt(r.circ.nameplate) + " kW" : "N/A") +
-      g("Free on circuit", r.circ && r.circ.known ? fmt(r.circ.sellable) + " kW" : "N/A") +
-      g("In queue", r.circ && r.circ.known ? fmt(r.circ.queue) + " kW" : "N/A") +
+      /* ComEd's own wording. "Estimated Net Load Capacity" is the figure this
+         tool calls BESS hosting capacity — same number, the utility's name
+         for it, and the name that appears on the interconnection form. */
+      g("Net load capacity", r.comed && r.comed.BESS_HC != null
+        ? fmt(r.comed.BESS_HC) + " kW" : "N/A") +
+      g("Net generation capacity", r.comed && r.comed.PV_HC_kW != null
+        ? fmt(r.comed.PV_HC_kW) + " kW" : "N/A") +
+      g("Feeder DER in queue", r.comed && r.comed.Feeder_Q != null
+        ? fmt(r.comed.Feeder_Q) + " kW" : (r.circ && r.circ.known ? fmt(r.circ.queue) + " kW" : "N/A")) +
+      g("Queue refreshed", r.queueRefreshed ? esc(String(r.queueRefreshed)) : "N/A") +
+      g("Buffer distance", r.buffFt != null ? fmt(r.buffFt) + " ft" : "N/A") +
+      g("Circuits covering", r.comedCovering ? r.comedCovering : "N/A") +
+      g("Free after queue and claims",
+        r.circ && r.circ.known ? fmt(r.circ.sellable) + " kW" : "N/A") +
       g("Battery size", r.sz && r.sz.kw != null
         ? fmt(r.sz.kw) + " kW / " + fmt(r.sz.kwh) + " kWh" : "N/A") +
       '</div>' +

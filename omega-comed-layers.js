@@ -687,31 +687,52 @@
 
   M.probePoint = function (lat, lon, cb) {
     if (lat == null || lon == null) { cb(new Error("no point given")); return; }
+    /* The service is asked what layers it HAS before any of them are probed.
+
+       This used to walk a hardcoded [75, 74, 73, 72, 71]. Those numbers were
+       inferred, never verified, and this file's own comment says ComEd
+       renumbers layers between publishes — so on a service where 71 is not a
+       township block, every probe came back empty and the tool reported "no
+       capacity published here" for sites that plainly have it. ComEd's own
+       viewer never hardcodes an id; it reads the service definition, and so
+       does this now.
+
+       Layer 75 stays FIRST when present because it is the only
+       address-resolved grain. Everything else the service offers is tried
+       after it, highest id first, since the coarser aggregates are lower. */
+    M.boot(function () {
+      var ids = [], seen = {}, j;
+      for (j = 0; j < SVC.layers.length; j++) {
+        var id = SVC.layers[j].id;
+        if (id == null || seen[id]) continue;
+        seen[id] = 1; ids.push(id);
+      }
+      ids.sort(function (a, b) { return b - a; });
+      if (ids.indexOf(75) >= 0) ids = [75].concat(ids.filter(function (v) { return v !== 75; }));
+      if (!ids.length) ids = M.POINT_LAYERS.slice();
+      diag("probe: service offers layers " + ids.join(","));
+      probeOrder(lat, lon, ids, cb);
+    });
+  };
+
+  function probeOrder(lat, lon, order, cb) {
     var dLat = M.PROBE_DEG;
     var dLon = M.PROBE_DEG / Math.cos(lat * Math.PI / 180);
     var env = JSON.stringify({
       xmin: lon - dLon, ymin: lat - dLat, xmax: lon + dLon, ymax: lat + dLat,
       spatialReference: { wkid: 4326 }
     });
-    var order = M.POINT_LAYERS.slice(), i = 0, errs = [], lastUrl = "";
+    var i = 0, errs = [], lastUrl = "", empties = [];
 
     (function tryNext() {
       if (i >= order.length) {
-        /* EVERY layer empty is close to impossible for a point inside the
-           territory. Layers 71-74 are PLSS blocks that TILE the service
-           area — a township block is 36 square miles and there is no gap
-           between them. So if even layer 71 returned nothing, either the
-           point is outside ComEd's footprint or the request is malformed in
-           a way the service accepted and answered emptily.
-
-           Both are reported, with the exact URL, because the difference is
-           always in the request and a screenshot of the card cannot show it. */
         var inTerritory = (lat > 40.6 && lat < 42.6 && lon > -89.5 && lon < -87.4);
         cb(null, { rows: [], layerId: null, addressResolved: false,
                    grain: "", tried: order, errors: errs,
                    serviceFailed: errs.length === order.length,
                    emptyEverywhere: errs.length === 0,
                    suspicious: errs.length === 0 && inTerritory,
+                   empties: empties,
                    lastUrl: lastUrl });
         return;
       }
@@ -720,7 +741,6 @@
         "&geometry=" + encodeURIComponent(env) +
         "&geometryType=esriGeometryEnvelope&inSR=4326&outSR=4326" +
         "&spatialRel=esriSpatialRelIntersects" +
-        /* Everything, because the grains do not share a schema. */
         "&outFields=*&returnGeometry=false&resultRecordCount=25";
       lastUrl = url;
 
@@ -730,18 +750,12 @@
                      (j.error.message ? " " + j.error.message : ""));
           errs.push("L" + id + ": " + msg);
           diag("probe L" + id + ": " + msg);
-          diag("   url " + url);
           tryNext();
           return;
         }
         if (!j.features || !j.features.length) {
-          /* A real, successful "nothing here" — recorded as such, not as an
-             error, so the caller can tell the two apart. The URL is logged
-             too: when this tool and ComEd's own viewer disagree about a
-             point, the difference is always in the request, and guessing at
-             it from a screenshot has cost this project several rounds. */
+          empties.push(id);
           diag("probe L" + id + ": 0 features");
-          diag("   url " + url);
           tryNext();
           return;
         }
@@ -755,12 +769,13 @@
         cb(null, {
           rows: rows, layerId: id,
           addressResolved: !!(GRAIN[id] && GRAIN[id].addressResolved),
-          grain: (GRAIN[id] && GRAIN[id].label) || "unknown grain",
-          tried: order.slice(0, i), errors: errs, serviceFailed: false
+          grain: (GRAIN[id] && GRAIN[id].label) || ("layer " + id),
+          tried: order.slice(0, i), errors: errs, serviceFailed: false,
+          lastUrl: url
         });
       });
     })();
-  };
+  }
 
   /* Nameplate for the product currently selected, net of queued DER. */
   M.capacityOf = function (row) {

@@ -702,11 +702,12 @@
                   confident wrong answer about a site that may be fine. */
                ? "ComEd answered every layer successfully and returned no features " +
                  "on any of them \u2014 including the township blocks, which tile " +
-                 "the entire service territory with no gaps. For a point in " +
-                 "northern Illinois that should be impossible, so treat this as a " +
-                 "LOOKUP PROBLEM rather than as a site without capacity. The exact " +
-                 "request is below; comparing it against the same point in the " +
-                 "ComEd Capacity Finder will show the difference."
+                 "the entire service territory. For a point in northern Illinois " +
+                 "that should be impossible, so treat this as a LOOKUP PROBLEM " +
+                 "rather than as a site without capacity." +
+                 (res && res.tried && res.tried.length
+                   ? " Layers tried: " + res.tried.join(", ") + "." : "") +
+                 " The exact request is below."
                : "ComEd returned no hosting-capacity feature at this point, on " +
                  "any of its published layers. That is not the same as no " +
                  "service \u2014 ComEd publishes capacity for some circuits and " +

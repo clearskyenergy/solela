@@ -1,0 +1,221 @@
+/* ============================================================================
+   ClearSky-OMEGA · firestore-capacity.rules
+   ----------------------------------------------------------------------------
+   The capacityAllocations block, and nothing else — same shape as
+   firestore-sites.rules and firestore-assets.rules. Paste it into the merged
+   rules for the clearsky-portal database; deploying this file on its own
+   would replace every other collection's rules with nothing.
+
+   WHERE: immediately after the closing brace of `match /sites/{siteId}` and
+   before `match /omega_orgs/{orgId}`. It sits next to /sites because it is
+   the same tenant, the same reps and the same sensitivity class.
+
+   ⚠ AN EARLIER DRAFT OF THIS WAS A STANDALONE FILE THAT REDEFINED
+   signedIn(), userOrg(), isOmegaStaff() and canActInOrg(). All four already
+   exist in the merged rules with DIFFERENT MEANINGS. Pasting it whole is a
+   deploy error (duplicate definitions); deleting the duplicates leaves these
+   rules calling the merged file's versions, which is worse, because it
+   deploys cleanly and quietly grants role-granted reps on any domain
+   cross-org access to every tenant's capacity claims.
+
+   THIS VERSION DEFINES NO TOP-LEVEL HELPERS AT ALL. Every helper below is
+   scoped inside the match block, exactly as hasStatus() and mineHere() are
+   inside /sites. It calls only userOrg(), ownsDemoBucket() and isAdmin(),
+   which already exist and are not touched.
+   ----------------------------------------------------------------------------
+
+   WHAT IT HOLDS
+   One document per claim on a distribution circuit. Written by
+   omega-capacity-ledger.js from the Site Finder; read by every rep in the
+   org so that two of them cannot sell the same wire twice.
+
+   Doc id = orgId + '__' + feederId + '__' + siteId, built by
+   OmegaLedger.allocId(). Same shape as siteDocId() on /sites, and for the
+   same reason: a feeder id is unique to a utility, not to a database shared
+   by eight tenants.
+
+   Body:
+     orgId       tenant scope — required, enforced below
+     id          feederId + '__' + siteId (the doc id minus the org prefix)
+     feederId    the circuit. Immutable after creation.
+     siteId      the parcel or listing id. Immutable after creation.
+     address     for the do-not-call warning on neighbouring sites
+     lat, lon
+     kw, kwh     how much of the circuit this claim consumes
+     status      prospect | reserved | proposal | application
+                 | approved | energized | lost
+     rep, note
+     createdAt, updatedAt
+     expiresAt   soft holds only. Absent on firm claims by design.
+
+   ── SCOPING: DELIBERATELY THE SAME AS /sites ─────────────────────────────
+   Own org, demo bucket, isAdmin(). Nothing else.
+
+   NOT isConsoleViewer(). A claim carries a site address and the name of the
+   rep working it. sunesol.com and ogisolar.com already read /projects across
+   orgs; they must not also read another tenant's pipeline. Same reasoning
+   that keeps them out of /sites, /intake_projects and /equipment.
+
+   NOT isOmegaStaff(). This is the one that matters, because isOmegaStaff()
+   here means isAdmin() OR any active rep on any domain — wider than it looks
+   from the name. A rep works the intake queue; there is no workflow in which
+   they need another tenant's circuit reservations. /sites makes exactly this
+   call and this follows it.
+
+   NOT isPortalAdmin(). An outside partner company has no business reading
+   which circuits a tenant has locked up.
+
+   ── WHAT THE RULES CAN AND CANNOT ENFORCE ────────────────────────────────
+   The oversell check — "is there enough left on this circuit" — lives in
+   omega-capacity-ledger.js, in the browser. Firestore rules CANNOT sum a
+   query, so that arithmetic cannot be reproduced here at any price. What is
+   enforced below is everything else: tenant isolation, id shape, an immutable
+   circuit and site, a status from the known list, sane kW, and a ceiling on
+   how long a soft hold can park capacity.
+
+   A patched client can therefore still oversell a circuit. It cannot reach
+   another tenant, move a claim between circuits, or hold capacity forever.
+   If the arithmetic has to bind at the database — worth it the day a
+   disputed claim costs a deposit — that needs a Cloud Function writing
+   through a per-feeder rollup document in a transaction. See open question 2
+   in README-sitefinder.md.
+   ========================================================================== */
+
+    match /capacityAllocations/{allocId} {
+
+      /* An existing row this caller may work. resource is null on create, so
+         this is used on read / update / delete only. Same shape as
+         mineHere() in /sites — one definition, three verbs, so they cannot
+         drift apart. */
+      function mineHere() {
+        return signedIn()
+          && (resource.data.orgId == userOrg()
+              || ownsDemoBucket(resource.data.orgId)
+              || isAdmin());
+      }
+
+      /* The caller may write into this org at all. */
+      function canWriteOrg(o) {
+        return signedIn()
+          && (o == userOrg() || ownsDemoBucket(o) || isAdmin());
+      }
+
+      /* The document id is pinned to its own contents, so one tenant cannot
+         write a row that another tenant's org-scoped query would return, and
+         two sites cannot collide on one claim.
+
+         The client builds this with a global regex replace in allocId(); the
+         same substitution is repeated here rather than trusted. Rules'
+         String.replace() replaces every match, matching the /g in the client. */
+      function idIsWellFormed() {
+        return allocId == request.resource.data.orgId + '__'
+             + request.resource.data.feederId.replace('[^A-Za-z0-9_-]', '_') + '__'
+             + request.resource.data.siteId.replace('[^A-Za-z0-9_-]', '_');
+      }
+
+      /* Status IS enumerated here, unlike /sites — and the difference is
+         deliberate. On /sites an unknown status renders as 'identified' and
+         the row still works, so refusing it would have been a silent save
+         failure for no gain. Here the status decides WHETHER THE CLAIM
+         CONSUMES CAPACITY: 'prospect' and 'lost' hold nothing, everything
+         else holds. A value outside this list would be read by
+         OmegaLedger.statusOf() as 'prospect' and quietly free a circuit that
+         somebody believes they have locked. That is a wrong number in front
+         of a customer, so it is refused at the database.
+
+         KEEP THIS LIST IN STEP WITH L.STATUS in omega-capacity-ledger.js. */
+      function statusKnown(d) {
+        return d.get('status', '') in ['prospect', 'reserved', 'proposal',
+                                       'application', 'approved', 'energized', 'lost'];
+      }
+
+      function shapeOk(d) {
+        return d.orgId is string    && d.orgId.size() > 0
+            && d.feederId is string && d.feederId.size() > 0 && d.feederId.size() < 64
+            && d.siteId is string   && d.siteId.size() > 0   && d.siteId.size() < 64
+            && d.kw is number       && d.kw >= 0 && d.kw <= 500000
+            && statusKnown(d)
+            && d.get('address', '') is string && d.get('address', '').size() < 240
+            && d.get('note', '') is string    && d.get('note', '').size() < 2000
+            && d.get('rep', '') is string     && d.get('rep', '').size() < 160;
+      }
+
+      /* A soft hold with no expiry is not a hold, it is an outage — the rep
+         leaves, nobody remembers, and the circuit is dead stock forever. The
+         client writes 30 days; this refuses anything past 90, so a patched
+         client cannot park a circuit indefinitely. Firm claims
+         (application / approved / energized) carry no expiry by design and
+         are not tested. */
+      function expiryOk(d) {
+        return !(d.get('status', '') in ['reserved', 'proposal'])
+            || (d.get('expiresAt', 0) is number
+                && d.get('expiresAt', 0) > 0
+                && d.get('expiresAt', 0) <= request.time.toMillis() + 7776000000);
+      }
+
+      /* ── THE CLAIM ─────────────────────────────────────────────────────
+         On create the rep must be the caller's own address, or blank. Same
+         pin as repEmail on /sites and authorEmail on /team_messages: you may
+         claim a circuit for yourself, or leave it unattributed, but you may
+         not file one in a colleague's name.
+
+         .lower() on both sides for the reason spelled out in userOrg() — a
+         token arriving as Thomas@Chileasing.com would otherwise fail a
+         case-sensitive comparison and block ONE rep while the rest work. */
+      function repIsOwnOrBlank() {
+        return request.resource.data.get('rep', '') == ''
+            || request.resource.data.get('rep', '').lower()
+                 == request.auth.token.email.lower();
+      }
+
+      /* Everyone in the org reads every claim in the org, and that is the
+         entire point of the collection. A lock nobody else can see stops
+         nobody from selling over it. */
+      allow read: if mineHere();
+
+      allow create: if canWriteOrg(request.resource.data.orgId)
+                    && idIsWellFormed()
+                    && shapeOk(request.resource.data)
+                    && expiryOk(request.resource.data)
+                    && (repIsOwnOrBlank() || isAdmin());
+
+      /* orgId, feederId and siteId are all immutable. Letting a claim change
+         circuits after the fact would silently free capacity on one wire and
+         consume it on another with no record that it happened — and the
+         history is the only thing that settles it when two reps both believe
+         they had the circuit first.
+
+         The rep is NOT pinned on update, deliberately, matching /sites.
+         Handing a site to a colleague who has the relationship is ordinary
+         floor work, and routing it through an administrator would mean reps
+         work around the tool rather than in it. Honest by visibility, not by
+         enforcement: everyone can see who holds what and who changed it.
+
+         ← LOCK ATTRIBUTION applies here too. The day the circuit ledger
+         drives commission, uncomment the clause below and reassignment
+         becomes an administrator act, exactly as marked on /sites. */
+      allow update: if mineHere()
+                    && request.resource.data.orgId    == resource.data.orgId
+                    && request.resource.data.feederId == resource.data.feederId
+                    && request.resource.data.siteId   == resource.data.siteId
+                    && shapeOk(request.resource.data)
+                    && expiryOk(request.resource.data)
+                    /* ← LOCK ATTRIBUTION — uncomment with the matching clause on /sites
+                    && (isAdmin()
+                        || resource.data.get('rep', '') == ''
+                        || request.resource.data.get('rep', '') == resource.data.get('rep', ''))
+                    */
+                    ;
+
+      /* ── DELETE IS ADMIN-ONLY, AND THIS DIFFERS FROM /sites ON PURPOSE ──
+         A /sites row is a working sales record and a rep can bin their own.
+         A capacity claim is a LOCK on a shared physical resource, and the
+         record of who held what and when is what settles a dispute over a
+         circuit two people both worked.
+
+         Releasing therefore sets status to 'lost', which returns the capacity
+         to the circuit immediately and leaves the row. Nothing in the Site
+         Finder calls delete at all; this exists so a test row can be cleared
+         without opening the Firebase console. */
+      allow delete: if isAdmin();
+    }

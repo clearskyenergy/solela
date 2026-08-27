@@ -750,9 +750,13 @@
   }
 
   function probeOrder(lat, lon, order, cb) {
-    /* ~60 m each way, matching the Capacity Finder's snap radius, expressed
-       in metres now rather than degrees. */
-    var c = toMerc(lat, lon), R = 61;
+    /* ~61 m each way ON THE GROUND, matching the Capacity Finder's snap
+       radius. Web Mercator units are only metres at the equator — at
+       Chicago's latitude one Mercator unit is cos(41.8) = 0.745 real metres,
+       so an unscaled 61-unit box would be a 45 m box and could miss a circuit
+       the Capacity Finder catches. */
+    var c = toMerc(lat, lon);
+    var R = 61 / Math.cos(lat * Math.PI / 180);
     var env = JSON.stringify({
       xmin: c.x - R, ymin: c.y - R, xmax: c.x + R, ymax: c.y + R,
       spatialReference: { wkid: 102100 }

@@ -583,7 +583,7 @@
      Shown in Settings and stamped into the diagnostics log. Several rounds of
      debugging have been spent on the question "is the deployed file the one
      we just changed", and a screenshot cannot answer it. Now it can. */
-  var CS_BUILD = "2026-08-27 22:53 UTC";
+  var CS_BUILD = "2026-08-27 23:57 UTC";
 
   function savedTileKey() {
     try { return window.localStorage.getItem("cs.tileKey") || ""; }
@@ -683,6 +683,8 @@
         cb({ ok: false, key: broke ? "serviceerror" : odd ? "suspicious" : "offterritory",
              label: label, feederId: null,
              errors: res ? res.errors : null,
+             empties: res ? res.empties : null,
+             tried: res ? res.tried : null,
              probeUrl: res ? res.lastUrl : "",
              headline: broke ? "Could not reach ComEd"
                      : odd ? "Empty answer from every ComEd layer"
@@ -1974,24 +1976,57 @@
       '<p class="note">' + body + '</p></div>';
   }
 
-  function dropPin(lat, lon) {
+  /* The pin is the analysed point, and it has to be VISIBLE.
+
+     Placing it only on map-click was wrong: a searched address moved the map
+     and opened a panel with no marker on it, so a rep reading "no circuit
+     published here" had no way to see WHERE the tool had actually looked —
+     which, given how far off some geocodes have landed, is the first thing
+     worth checking. Search and click now drop the same pin.
+
+     It is a marker rather than a circle so it stays the same size at every
+     zoom, and it carries a tooltip with the exact coordinates because that
+     is the number to compare against ComEd's own map. */
+  function placePin(lat, lon, label) {
     if (pinMarker) map.removeLayer(pinMarker);
-    pinMarker = window.L.circleMarker([lat, lon], {
-      radius: 8, weight: 3, color: "#0a6ed1", fillColor: "#0a6ed1", fillOpacity: 0.25
+    pinMarker = window.L.marker([lat, lon], {
+      zIndexOffset: 1000,
+      icon: window.L.divIcon({
+        className: "",
+        html: '<div style="width:24px;height:24px;margin:-12px 0 0 -12px;' +
+              'border-radius:50%;background:rgba(10,110,209,.20);' +
+              'border:2.5px solid #0a6ed1;box-shadow:0 1px 4px rgba(0,0,0,.3)">' +
+              '<div style="width:7px;height:7px;border-radius:50%;' +
+              'background:#0a6ed1;margin:6.5px auto"></div></div>',
+        iconSize: [0, 0]
+      })
     }).addTo(map);
-    var label = lat.toFixed(5) + ", " + lon.toFixed(5);
-    head("Reading the circuit\u2026", label);
-    viabilityAt(lat, lon, label, function (v) {
+    pinMarker.bindTooltip(
+      (label ? esc(label) + "<br>" : "") +
+      lat.toFixed(5) + ", " + lon.toFixed(5),
+      { direction: "top", offset: [0, -14] });
+    /* Clicking the pin re-opens its analysis, so it stays useful after the
+       drawer has been closed. */
+    pinMarker.on("click", function () { analysePoint(lat, lon, label); });
+    return pinMarker;
+  }
+
+  /* One analysis path for both entry points. */
+  function analysePoint(lat, lon, label) {
+    var name = label || (lat.toFixed(5) + ", " + lon.toFixed(5));
+    head("Reading the circuit\u2026", name);
+    viabilityAt(lat, lon, name, function (v) {
       v.pinned = true;
-      /* Ask the county what parcel this actually is, rather than reporting
-         the nearest record we happen to hold. The circuit read does not wait
-         on it — a slow assessor service must not delay the answer that is
-         already available. */
       SRC.parcelAt(lat, lon, function (e, p) {
         v.parcel = p || null;
         showViability(v, lat, lon);
       });
     });
+  }
+
+  function dropPin(lat, lon) {
+    placePin(lat, lon, null);
+    analysePoint(lat, lon, null);
   }
 
   map.on("click", function (e) {
@@ -2450,6 +2485,59 @@
       : "";
   }
 
+  /* Any real address gets a score, not only parcels in the harvested list.
+
+     The list and the address lookup were scoring differently: a card carried
+     a battery score and a large-load score, and a searched address carried
+     none. But the score is mostly a function of the CIRCUIT — deliverable
+     kW, headroom, whether the wire or the load binds — and all of that is
+     available for any point ComEd answers about. Withholding it because no
+     parcel record exists made the address lookup feel like a lesser tool.
+
+     What genuinely cannot be scored without a building is the load half, so
+     that is stated rather than guessed at. */
+  function scoreBlockHtml(v, lat, lon) {
+    if (!v.feederId || !v.state || !v.state.known) return "";
+    var near = nearestKnown(lat, lon);
+    var r = near ? near.row : null;
+
+    /* A record shaped like a card, from the circuit plus whatever building
+       is known at this point. */
+    var pseudo = {
+      type: r ? r.type : "Industrial",
+      sqft: r ? r.sqft : null,
+      lotAcres: (v.parcel && v.parcel.acres) || (r ? r.lotAcres : null),
+      peakKw: r ? r.peakKw : null,
+      annualKwh: r ? r.annualKwh : null,
+      sz: v.size, circ: v.state,
+      grainFactor: 1
+    };
+    var battery = score(pseudo);
+    var large = loadScore(pseudo);
+
+    var why = [];
+    why.push("<b>" + fmt(v.state.sellable) + " kW</b> deliverable after ComEd\u2019s " +
+             "queue and your team\u2019s claims.");
+    if (!pseudo.peakKw) {
+      why.push("No building load is known at this point, so the battery score " +
+               "reflects the CIRCUIT only. A real peak usually lowers it \u2014 " +
+               "the load is normally the smaller of the two ceilings.");
+    } else {
+      why.push("Modelled peak <b>" + fmt(pseudo.peakKw) + " kW</b>" +
+               (pseudo.annualKwh && pseudo.annualKwh.src === "metered"
+                 ? " from metered consumption." : ", estimated from floor area."));
+    }
+    if (!v.addressResolved) {
+      why.push("Read from " + esc(v.grain) + ", not the circuit itself, so treat " +
+               "both scores as indicative.");
+    }
+
+    return '<div class="sec"><h4>Score</h4><div class="grid2">' +
+      g("Battery deal", '<b>' + battery + '</b> / 100') +
+      g("Large load / data centre", '<b>' + large + '</b> / 100') +
+      '</div><p class="note">' + why.join(" ") + '</p></div>';
+  }
+
   function showViability(v, lat, lon) {
     var short = String(v.label).split(",").slice(0, 2).join(",");
     head(v.headline, v.why);
@@ -2462,10 +2550,29 @@
         '<div class="sec"><p class="note">' + esc(v.why) + '</p></div>' +
         (v.probeUrl ? '<div class="sec"><h4>The request that was sent</h4>' +
           '<pre class="diagBox">' + esc(v.probeUrl) + '</pre>' +
-          '<p class="note">Paste this into a browser tab. If ComEd returns ' +
-          'features for it, the bug is in how this page reads the answer. If it ' +
-          'returns none, the request itself is wrong \u2014 and that is the thing ' +
-          'to compare against the Capacity Finder.</p></div>' : '') +
+          '<p class="note"><a href="' + esc(v.probeUrl) + '" target="_blank" ' +
+          'rel="noopener"><b>Open this request in a new tab</b></a>. If ComEd ' +
+          'returns features, the bug is in how this page reads the answer. If ' +
+          'it returns none, the request is wrong.</p></div>' : '') +
+        /* WHAT EVERY LAYER ACTUALLY SAID.
+           These were being collected and thrown away unless every single
+           layer failed. A mixed result — some layers erroring, some genuinely
+           empty — fell through to the generic "no capacity published" message
+           and hid the errors completely, which is how a broken lookup has
+           been reading as a dead site. */
+        ((v.errors && v.errors.length) || (v.empties && v.empties.length)
+          ? '<div class="sec"><h4>What each layer said</h4><pre class="diagBox">' +
+            esc(
+              (v.errors || []).join("\n") +
+              ((v.errors || []).length && (v.empties || []).length ? "\n" : "") +
+              ((v.empties || []).length
+                ? "0 features on: L" + v.empties.join(", L") : "")
+            ) + '</pre>' +
+            '<p class="note">An ERROR line is the service refusing or ' +
+            'rejecting the query \u2014 that is a broken lookup, not an empty ' +
+            'site. A "0 features" line is a real answer. If they are mixed, ' +
+            'the errors are the thing to fix first.</p></div>'
+          : '') +
         (v.key === "serviceerror" || v.key === "suspicious" ? '' :
         '<div class="sec"><h4>What to do with this</h4>' +
         '<p class="note">ComEd was asked directly about this point and returned ' +
@@ -2507,6 +2614,7 @@
       '</div>' +
       '<div class="sec"><h4>How this circuit was matched</h4>' +
         '<p class="note">' + esc(matchLine(v)) + '</p></div>' +
+      scoreBlockHtml(v, lat, lon) +
       comedRecordHtml(v.rows && v.rows[0] ? v.rows[0].a : null, v.covering) +
       parcelBlockHtml(v.parcel) +
       loadBlockHtml(lat, lon) +
@@ -3018,24 +3126,31 @@
     })();
 
     function landOn(lat, lon, label, attempt, hit) {
-      map.setView([lat, lon], 16);
-      head("Reading the circuit\u2026", label);
-      /* A ZIP-centroid match is reported as one. Everything on the card is
-         computed from this point, so a rep has to know when it is the middle
-         of a postcode rather than the building. */
+      map.setView([lat, lon], 17);
+      /* Drop the pin FIRST, before any lookup runs. If the circuit query
+         comes back empty, the rep can still see exactly where the tool
+         looked — and whether that is the building they meant. */
+      placePin(lat, lon, label);
+
       if (attempt.approx) {
         head("Approximate location",
-             "Only the ZIP matched, so this pin is the centre of " + attempt.q +
-             " and may be a mile from the building. The circuit below is for " +
-             "that point, not necessarily for this address.");
+             "Only \u201c" + attempt.kind + "\u201d matched, so this pin is not the " +
+             "building \u2014 it may be a long way from it. The circuit below is " +
+             "for the pinned point.");
+      } else {
+        head("Reading the circuit\u2026", label);
       }
       viabilityAt(lat, lon, label, function (v) {
         v.geoSrc = hit.src; v.approxPin = !!attempt.approx;
         v.geoInterp = !!hit.interpolated;
         v.geoStreet = !!hit.street;
         v.matched = hit.matched || "";
-        showViability(v, lat, lon);
-        if (hasSource()) run(true);
+        v.pinned = true;
+        SRC.parcelAt(lat, lon, function (e, p) {
+          v.parcel = p || null;
+          showViability(v, lat, lon);
+          if (hasSource()) run(true);
+        });
       });
       LAY.attribIn(bounds(), function () {});
     }

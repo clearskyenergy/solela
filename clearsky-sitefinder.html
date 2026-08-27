@@ -469,6 +469,7 @@
         <button id="setDiagRefresh">Refresh</button>
       </div>
       <pre id="setDiag" class="diagBox">Run a lookup, then press Refresh.</pre>
+      <p class="setKeyMsg">Build <b id="setBuild">—</b></p>
     </section>
 
     <section>
@@ -577,6 +578,13 @@
      it sits in config rather than pretending otherwise. The raster service is
      also being retired; when it goes, the move is MapLibre against the vector
      style, which is more than a one-line change and should be planned. */
+  /* BUILD STAMP.
+
+     Shown in Settings and stamped into the diagnostics log. Several rounds of
+     debugging have been spent on the question "is the deployed file the one
+     we just changed", and a screenshot cannot answer it. Now it can. */
+  var CS_BUILD = "2026-08-27 22:29 UTC";
+
   function savedTileKey() {
     try { return window.localStorage.getItem("cs.tileKey") || ""; }
     catch (e) { return ""; }          /* private mode, or storage disabled */
@@ -671,19 +679,34 @@
            answer, the service refused us — and saying "no capacity here"
            would tell a rep to walk away from a site that may be fine. */
         var broke = res && res.serviceFailed;
-        cb({ ok: false, key: broke ? "serviceerror" : "offterritory",
+        var odd = res && res.suspicious;
+        cb({ ok: false, key: broke ? "serviceerror" : odd ? "suspicious" : "offterritory",
              label: label, feederId: null,
              errors: res ? res.errors : null,
-             headline: broke ? "Could not reach ComEd" : "No ComEd circuit published here",
+             probeUrl: res ? res.lastUrl : "",
+             headline: broke ? "Could not reach ComEd"
+                     : odd ? "Empty answer from every ComEd layer"
+                     : "No ComEd circuit published here",
              why: broke
                ? "Every ComEd layer refused or failed to answer, including the " +
                  "territory-wide block layers \u2014 which cover every point in " +
                  "the service area. So this is NOT a site without capacity; it " +
-                 "is a lookup that did not complete. Most likely the service " +
-                 "name has rotated (it carries a month and refreshes quarterly) " +
-                 "or the proxy is down. Do not treat this address as " +
-                 "disqualified." + (res && res.errors && res.errors.length
+                 "is a lookup that did not complete." +
+                 (res && res.errors && res.errors.length
                    ? " Reported: " + res.errors.join("; ") : "")
+               : odd
+               /* The invariant: layers 71-74 are PLSS blocks that tile the
+                  whole territory with no gaps. A point in northern Illinois
+                  that matches nothing on ANY of them has almost certainly not
+                  been asked correctly. Saying "no capacity" here would be a
+                  confident wrong answer about a site that may be fine. */
+               ? "ComEd answered every layer successfully and returned no features " +
+                 "on any of them \u2014 including the township blocks, which tile " +
+                 "the entire service territory with no gaps. For a point in " +
+                 "northern Illinois that should be impossible, so treat this as a " +
+                 "LOOKUP PROBLEM rather than as a site without capacity. The exact " +
+                 "request is below; comparing it against the same point in the " +
+                 "ComEd Capacity Finder will show the difference."
                : "ComEd returned no hosting-capacity feature at this point, on " +
                  "any of its published layers. That is not the same as no " +
                  "service \u2014 ComEd publishes capacity for some circuits and " +
@@ -1346,9 +1369,11 @@
     function paintDiag() {
       var el = document.getElementById("setDiag");
       var lines = (LAY.diag ? LAY.diag() : []);
-      el.textContent = lines.length ? lines.join("\n") : "No ComEd requests yet.";
+      el.textContent = "build " + CS_BUILD + "\n" +
+        (lines.length ? lines.join("\n") : "No ComEd requests yet.");
       el.scrollTop = el.scrollHeight;
     }
+    document.getElementById("setBuild").textContent = CS_BUILD;
     document.getElementById("setDiagRefresh").onclick = paintDiag;
     document.getElementById("setDiagCopy").onclick = function () {
       var b = this;
@@ -2024,46 +2049,103 @@
      ══════════════════════════════════════════════════════════════════════ */
   var GEO_CACHE = {}, geoBusy = 0;
 
-  function geocodeOne(addr, city, zip, cb) {
-    var key = (addr + "|" + city + "|" + zip).toLowerCase();
+  /* Geocode one query.
+
+     `parts` true  — compose the query from address/city/ZIP (a record being
+                     corrected, where those fields are separate).
+     `parts` false — the string is used VERBATIM (the search box, where the
+                     user already typed a whole address). Appending ", IL" to
+                     a string that already ends "IL, USA" produced
+                     "…, IL, USA,  IL " and Census rejected it outright.
+
+     THE HOUSE NUMBER IS VALIDATED. A geocoder asked for "4343 S Michigan Ave
+     Chicago" will happily return the CENTROID OF S MICHIGAN AVENUE if it
+     cannot resolve the number — a point in the Loop, seven kilometres from
+     4343 South, on a different circuit, with a confident-looking answer. So
+     when the query carries a house number, the match has to carry the same
+     one or it is rejected and the next rung is tried. A wrong point is worse
+     than no point, because everything downstream is computed from it. */
+  function houseNumberOf(s) {
+    /* A house number is a number followed by a STREET. "60653, IL, USA"
+       starts with five digits and is a postcode — reading that as a house
+       number makes the ZIP rung of the search ladder impossible to satisfy,
+       because nothing will ever match house number 60653. */
+    var m = String(s || "").trim().match(/^(\d+)\s+(.+)$/);
+    if (!m) return null;
+    if (/^(il|illinois|usa|us)\b/i.test(m[2])) return null;
+    return m[1];
+  }
+
+  function geocodeOne(addr, city, zip, cb, parts) {
+    var key = (addr + "|" + city + "|" + zip + "|" + (parts ? "p" : "v")).toLowerCase();
     if (GEO_CACHE[key] !== undefined) { cb(GEO_CACHE[key]); return; }
     if (!addr) { cb(null); return; }
+
+    var q = parts
+      ? (addr + ", " + (city || "Chicago") + ", IL " + (zip || "")).replace(/\s+/g, " ").trim()
+      : addr;
+    var want = houseNumberOf(parts ? addr : q);
+
+    function accept(hit) { GEO_CACHE[key] = hit; cb(hit); }
+    function reject() { GEO_CACHE[key] = null; cb(null); }
+
     var one = "https://geocoding.geo.census.gov/geocoder/locations/onelineaddress" +
-      "?address=" + encodeURIComponent(addr + ", " + (city || "") + " IL " + (zip || "")) +
+      "?address=" + encodeURIComponent(q) +
       "&benchmark=Public_AR_Current&format=json";
     var x = new XMLHttpRequest();
-    x.open("GET", one, true);
+    try { x.open("GET", one, true); } catch (e) { nominatim(); return; }
     x.timeout = 15000;
-    function fail() {
-      /* Nominatim fallback. One request, and only for records the feed
-         itself admits are imprecise — this is not a bulk geocode. */
-      var u = "https://nominatim.openstreetmap.org/search?format=json&limit=1&q=" +
-        encodeURIComponent(addr + ", " + (city || "Chicago") + ", IL " + (zip || ""));
-      var y = new XMLHttpRequest();
-      y.open("GET", u, true);
-      y.timeout = 15000;
-      y.onreadystatechange = function () {
-        if (y.readyState !== 4) return;
-        var j = null;
-        try { j = JSON.parse(y.responseText); } catch (e) {}
-        var hit = (j && j[0]) ? { lat: +j[0].lat, lon: +j[0].lon, src: "nominatim" } : null;
-        GEO_CACHE[key] = hit; cb(hit);
-      };
-      y.ontimeout = y.onerror = function () { GEO_CACHE[key] = null; cb(null); };
-      y.send();
-    }
     x.onreadystatechange = function () {
       if (x.readyState !== 4) return;
       var j = null;
       try { j = JSON.parse(x.responseText); } catch (e) {}
       var m = j && j.result && j.result.addressMatches && j.result.addressMatches[0];
       if (m && m.coordinates) {
-        var hit = { lat: +m.coordinates.y, lon: +m.coordinates.x, src: "census" };
-        GEO_CACHE[key] = hit; cb(hit);
-      } else fail();
+        /* Census echoes what it matched. If we asked for 4343 and it matched
+           something else, that is not our building. */
+        var got = houseNumberOf(m.matchedAddress);
+        if (want && got && got !== want) { nominatim(); return; }
+        accept({ lat: +m.coordinates.y, lon: +m.coordinates.x,
+                 src: "census", matched: m.matchedAddress || "" });
+        return;
+      }
+      nominatim();
     };
-    x.ontimeout = x.onerror = fail;
+    x.ontimeout = x.onerror = nominatim;
     x.send();
+
+    function nominatim() {
+      var u = "https://nominatim.openstreetmap.org/search?format=json&addressdetails=1" +
+        "&countrycodes=us&limit=5&q=" + encodeURIComponent(q);
+      var y = new XMLHttpRequest();
+      try { y.open("GET", u, true); } catch (e) { reject(); return; }
+      y.timeout = 15000;
+      y.onreadystatechange = function () {
+        if (y.readyState !== 4) return;
+        var j = null;
+        try { j = JSON.parse(y.responseText); } catch (e) {}
+        if (!j || !j.length) { reject(); return; }
+        var i, r, ad;
+        for (i = 0; i < j.length; i++) {
+          r = j[i];
+          ad = r.address || {};
+          /* Reject a street-centroid result for a numbered address. Nominatim
+             signals this with class=highway, or by returning no house_number
+             while we asked for one. */
+          if (want) {
+            if (r.class === "highway") continue;
+            if (ad.house_number && ad.house_number !== want) continue;
+            if (!ad.house_number) continue;
+          }
+          accept({ lat: +r.lat, lon: +r.lon, src: "nominatim",
+                   matched: r.display_name || "" });
+          return;
+        }
+        reject();
+      };
+      y.ontimeout = y.onerror = function () { reject(); };
+      y.send();
+    }
   }
 
   /* Correct the approximate ones, a few at a time so a viewport full of
@@ -2087,10 +2169,11 @@
               r.lat = hit.lat; r.lon = hit.lon;
               r.approx = false;
               r.geoSrc = hit.src;
+              r.geoMatched = hit.matched || "";
               n++;
             }
             if (k >= todo.length && active === 0) done(n); else pump();
-          });
+          }, true);
         })(todo[k++]);
       }
       if (!todo.length || (k >= todo.length && active === 0)) done(n);
@@ -2277,7 +2360,13 @@
                                  : "No circuit published here";
       document.getElementById("dBody").innerHTML =
         '<div class="sec"><p class="note">' + esc(v.why) + '</p></div>' +
-        (v.key === "serviceerror" ? '' :
+        (v.probeUrl ? '<div class="sec"><h4>The request that was sent</h4>' +
+          '<pre class="diagBox">' + esc(v.probeUrl) + '</pre>' +
+          '<p class="note">Paste this into a browser tab. If ComEd returns ' +
+          'features for it, the bug is in how this page reads the answer. If it ' +
+          'returns none, the request itself is wrong \u2014 and that is the thing ' +
+          'to compare against the Capacity Finder.</p></div>' : '') +
+        (v.key === "serviceerror" || v.key === "suspicious" ? '' :
         '<div class="sec"><h4>What to do with this</h4>' +
         '<p class="note">ComEd was asked directly about this point and returned ' +
         'nothing on any published layer. Two things to check before concluding ' +
@@ -2803,13 +2892,16 @@
         return;
       }
       var a = attempts[ai++];
+      /* Verbatim: the user typed a whole address, so it must not be
+         recomposed. The ZIP-centroid rung is the only one allowed to match
+         without a house number. */
       geocodeOne(a.q, "", "", function (hit) {
         if (!hit) { rung(); return; }
-        landOn(hit.lat, hit.lon, raw, a, hit.src);
-      });
+        landOn(hit.lat, hit.lon, raw, a, hit);
+      }, false);
     })();
 
-    function landOn(lat, lon, label, attempt, src) {
+    function landOn(lat, lon, label, attempt, hit) {
       map.setView([lat, lon], 16);
       head("Reading the circuit\u2026", label);
       /* A ZIP-centroid match is reported as one. Everything on the card is
@@ -2822,7 +2914,8 @@
              "that point, not necessarily for this address.");
       }
       viabilityAt(lat, lon, label, function (v) {
-        v.geoSrc = src; v.approxPin = !!attempt.approx;
+        v.geoSrc = hit.src; v.approxPin = !!attempt.approx;
+        v.matched = hit.matched || "";
         showViability(v, lat, lon);
         if (hasSource()) run(true);
       });

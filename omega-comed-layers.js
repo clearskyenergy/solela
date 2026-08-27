@@ -658,20 +658,26 @@
       xmin: lon - dLon, ymin: lat - dLat, xmax: lon + dLon, ymax: lat + dLat,
       spatialReference: { wkid: 4326 }
     });
-    var order = M.POINT_LAYERS.slice(), i = 0, errs = [];
+    var order = M.POINT_LAYERS.slice(), i = 0, errs = [], lastUrl = "";
 
     (function tryNext() {
       if (i >= order.length) {
-        /* EVERY layer failing is not the same as every layer being empty.
-           The block layers tile the whole territory, so a point in ComEd's
-           service area that matches nothing on layer 71 means the SERVICE
-           did not answer — a refused request, a rotated service name, a
-           proxy that is down. Reporting that as "ComEd publishes nothing
-           here" tells a rep a site is dead when the tool is simply broken,
-           which is the worst answer this thing can give. */
+        /* EVERY layer empty is close to impossible for a point inside the
+           territory. Layers 71-74 are PLSS blocks that TILE the service
+           area — a township block is 36 square miles and there is no gap
+           between them. So if even layer 71 returned nothing, either the
+           point is outside ComEd's footprint or the request is malformed in
+           a way the service accepted and answered emptily.
+
+           Both are reported, with the exact URL, because the difference is
+           always in the request and a screenshot of the card cannot show it. */
+        var inTerritory = (lat > 40.6 && lat < 42.6 && lon > -89.5 && lon < -87.4);
         cb(null, { rows: [], layerId: null, addressResolved: false,
                    grain: "", tried: order, errors: errs,
-                   serviceFailed: errs.length === order.length });
+                   serviceFailed: errs.length === order.length,
+                   emptyEverywhere: errs.length === 0,
+                   suspicious: errs.length === 0 && inTerritory,
+                   lastUrl: lastUrl });
         return;
       }
       var id = order[i++];
@@ -681,6 +687,7 @@
         "&spatialRel=esriSpatialRelIntersects" +
         /* Everything, because the grains do not share a schema. */
         "&outFields=*&returnGeometry=false&resultRecordCount=25";
+      lastUrl = url;
 
       getJSON(url, function (err, j) {
         if (err || !j || j.error) {

@@ -157,6 +157,14 @@
   .ctxp-none.bad{color:#c0392b}
   .ctxp-attr{font-size:9px;color:var(--dim);font-family:var(--mono);padding-top:3px}
 
+  .sc-look{border:1px solid var(--line);background:var(--panel2);color:#0a6ed1;
+    border-radius:6px;padding:3px 9px;font:600 11.5px/1 inherit;cursor:pointer}
+  .sc-look:hover{border-color:#0a6ed1}
+  .sc-look:disabled{opacity:.6;cursor:default}
+  .sc-msg{font-size:11px;color:var(--dim);margin-left:6px}
+  .sc-msg.bad{color:#c0392b}
+  .sc-src{display:block;font-size:10px;color:var(--dim);font-family:var(--mono);margin-top:2px}
+
   /* ── CLICKED-DOT CONTEXT (side panel) ───────────────────────── */
   .ctxp{display:flex;flex-direction:column}
   .ctxp-act{margin-top:9px;border-top:1px solid var(--line);padding-top:9px}
@@ -372,6 +380,15 @@
   </div>
   <label class="lp"><input type="checkbox" id="prospect" checked><span>Prospecting colours</span></label>
   <label class="lp" style="border-top:0;padding-top:0;margin-top:4px"><input type="checkbox" id="fiberOn"><span>Fiber / colocation</span></label>
+  <label class="lp" style="border-top:0;padding-top:0;margin-top:4px"><input type="checkbox" id="subsOn"><span>Substations (<span id="subsCount">–</span>)</span></label>
+  <label class="lp" style="border-top:0;padding-top:0;margin-top:4px"><input type="checkbox" id="linesOn"><span>Transmission lines</span></label>
+  <div id="gridKey" style="display:none;padding:2px 0 4px 22px">
+    <div class="st" style="cursor:default"><span class="dot" style="background:#B3261E"></span><span>345 kV and up</span></div>
+    <div class="st" style="cursor:default"><span class="dot" style="background:#E8590C"></span><span>138 – 230 kV</span></div>
+    <div class="st" style="cursor:default"><span class="dot" style="background:#D9A404"></span><span>69 – 115 kV</span></div>
+    <div class="st" style="cursor:default"><span class="dot" style="background:#8D6E63"></span><span>kV not published</span></div>
+    <div id="gridMsg" style="font-family:var(--mono);font-size:9px;color:var(--dim);padding-top:2px"></div>
+  </div>
   <label class="lp"><input type="checkbox" id="autoOn" checked><span><b>Live accounts</b> (<span id="autoCount">0</span>)</span></label>
   <div id="autoMsg" style="font-family:var(--mono);font-size:9px;color:var(--dim);padding:1px 0 3px 22px"></div>
   <label class="lp" style="border-top:0;padding-top:0;margin-top:4px"><input type="checkbox" id="ciOn" checked><span>Find Sites results (<span id="ciCount">0</span>)</span></label>
@@ -633,6 +650,9 @@
 </div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<!-- Substations + transmission lines. Optional: if the file is missing the
+     two legend toggles disable themselves and everything else is unchanged. -->
+<script src="/omega-grid-infra.js"></script>
 <script>
 (function(){
 "use strict";
@@ -741,8 +761,47 @@ function fetchJSONPost(url,body,cb){
 /* ── map ─────────────────────────────────────────────────────── */
 var map=L.map("map",{zoomControl:false,minZoom:6,maxZoom:19,preferCanvas:true}).setView([41.85,-88.0],9);
 L.control.zoom({position:"bottomright"}).addTo(map);
-L.tileLayer("https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png",
-  {attribution:"© OpenStreetMap · © CARTO · ComEd hosting capacity",subdomains:"abcd",maxZoom:19}).addTo(map);
+/* ══════════════════════════════════════════════════════════════════
+   BASEMAP — CARTO now requires a key; keyless fallback provided
+   ══════════════════════════════════════════════════════════════════
+   CARTO's raster tiles at basemaps.cartocdn.com were keyless for years
+   and this tool used them from the start. They changed it: the raster
+   endpoint now requires an API key AND is being retired in favour of
+   vector tiles. So the old line silently stops serving tiles, and the
+   map goes blank with the data layers still drawing on nothing.
+
+   Two paths, and the tool picks whichever is available:
+
+     WITH A KEY — set cartoKey in config.js. Free tier is 5 million
+     tile requests a month, which a sales floor will not come close to.
+     Get one at carto.com. Best-looking option and it matches what the
+     tool was designed against.
+
+     WITHOUT A KEY — Esri's World Light Gray Canvas. No key, no signup,
+     and a near-identical pale-grey style, which matters because the
+     ComEd capacity bands are colour-coded and a busy basemap fights
+     them.
+
+   The Esri layer stops at zoom 16 natively, but this map needs 17-19 to
+   work parcels. maxNativeZoom lets Leaflet upscale past 16 rather than
+   showing blank tiles — the basemap goes slightly soft at the deepest
+   zooms while the capacity polygons and parcel pins stay sharp, which
+   is the right trade for a tool where the basemap is background.
+   ══════════════════════════════════════════════════════════════════ */
+(function(){
+  var key=(window.CLEARSKY_CONFIG&&window.CLEARSKY_CONFIG.cartoKey)||"";
+  if(key){
+    L.tileLayer("https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png?key="+encodeURIComponent(key),
+      {attribution:"© OpenStreetMap · © CARTO · ComEd hosting capacity",
+       subdomains:"abcd",maxZoom:19}).addTo(map);
+    diag("basemap: carto");
+  } else {
+    L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}",
+      {attribution:"Esri, HERE, Garmin, © OpenStreetMap contributors · ComEd hosting capacity",
+       maxZoom:19, maxNativeZoom:16}).addTo(map);
+    diag("basemap: esri (no CARTO key set)");
+  }
+})();
 /* ── STACKING ORDER ──────────────────────────────────────────────
    The pipeline pins were unclickable: drawFeatures() clears and re-adds
    the whole capacity layer on EVERY pan and zoom, so those polygons kept
@@ -1153,6 +1212,17 @@ function showResult(ll,info,rendLabel,layerId,all){
     h+='<div class="note">'+(BLOCKED?'<b>Blocked upstream (HTTP 403).</b> ComEd\u2019s proxy refused the request \u2014 see the status bar.':'No hosting-capacity feature returned at this point. Either the address is outside ComEd territory, or the click fell between mapped circuits \u2014 try clicking directly on a coloured area.')+'</div>';
   }
 
+  /* ── NEAREST GRID INFRASTRUCTURE ────────────────────────────────
+     Capacity says how many kW the feeder can absorb. It says nothing about
+     how far the copper has to run to get there, and that distance is where
+     the interconnection cost lives. Rendered as a placeholder and filled
+     when the lookup returns, so a slow national dataset never delays the
+     ComEd numbers the rep came for. */
+  if(GRID){
+    h+='<div class="sec">Nearest Grid Infrastructure</div>';
+    h+='<div id="gridNear"><div class="note">Looking up substations and transmission\u2026</div></div>';
+  }
+
   h+='<div class="sec">Bankable Decision</div>';
   h+='<div class="note">ComEd\u2019s published estimate of remaining feeder capacity, resolved to your address. Screening-grade: a formal <b>interconnection / load study</b> confirms the deliverable number before you buy. ComEd\u2019s own service metadata states <b>Update Frequency: Annually</b> \u2014 treat the month in the service name as a publication date, not a guarantee of freshness.</div>';
   if(info&&info.bess!=null){
@@ -1167,6 +1237,23 @@ function showResult(ll,info,rendLabel,layerId,all){
   document.getElementById("pBody").innerHTML=h;
   if(PANEL_PIN&&CRM.data[PANEL_PIN]) wireCrmPanel(PANEL_PIN);
   else if(PANEL_CTX) wireCtxPanel(PANEL_CTX);
+
+  /* Async fill. The guard on gridNear still being in the DOM matters: a rep
+     clicking two sites in quick succession would otherwise have the first
+     lookup write its answer into the second site's panel. */
+  if(GRID){
+    (function(lat,lon){
+      GRID.nearest(lat,lon,function(near){
+        var el=document.getElementById("gridNear");
+        if(!el) return;
+        el.innerHTML=GRID.nearestHtml(near)+
+          '<button class="cta" id="gridShow" style="border:0;cursor:pointer;width:100%;'+
+          'background:var(--panel2);color:var(--muted)">Show it on the map</button>';
+        var b=document.getElementById("gridShow");
+        if(b) b.onclick=function(){ GRID.reveal(lat,lon); };
+      });
+    })(ll.lat,ll.lng);
+  }
   var ps=document.getElementById("pSize");
   if(ps) ps.onclick=function(){
     var q=parseFloat(info.queue); if(isNaN(q)) q=0;
@@ -1254,6 +1341,90 @@ function knownReps(){
    ignores it and types what they learned on the phone.
    ══════════════════════════════════════════════════════════════════ */
 var OSM_ENDPOINT="https://overpass-api.de/api/interpreter";
+
+/* ══════════════════════════════════════════════════════════════════
+   WHAT PARCEL IS AT THIS POINT  —  county assessor, point-in-polygon
+   ══════════════════════════════════════════════════════════════════
+   A rep clicks a spot and the panel shows "41.92694, -87.95454". That is
+   a coordinate, not a site. What they need is the PIN, the street
+   address, and the owner of record — which is exactly what a county
+   parcel layer returns for a point.
+
+   NOT a reverse geocode. A geocoder gives a nearest street address and
+   nothing else; it cannot give a PIN, and the PIN is the key to every
+   public record on the property — assessor, recorder, treasurer. It is
+   also the id this tool keys pipeline sites on, so a looked-up parcel
+   drops straight into the pipeline without a second identity.
+
+   Google is not an option here for the reasons in the layer comment
+   above — the basemap restriction alone rules it out.
+
+   Falls back to Nominatim (already used for the address search box, so
+   no new dependency or licence question) when the point is outside a
+   county we have wired up. That yields an address but no PIN, and says
+   so rather than leaving a blank field looking broken.
+   ══════════════════════════════════════════════════════════════════ */
+var PARCEL_SERVICES=[
+  { county:"DuPage",
+    url:"https://gis.dupageco.org/arcgis/rest/services/DuPage_County_IL/ParcelsWithRealEstateCC/MapServer/0",
+    pin:"PIN", addr:"PROPADDRL1", city:"PROPCITY", owner:"PROPNAME",
+    acres:"ACREAGE", val:"REA017_FCV_TOTAL", cls:"REA017_PROP_CLASS" }
+  /* Add a county here as its endpoint and field names are verified.
+     Do NOT copy DuPage's field names across — every county names them
+     differently, and a wrong mapping returns a blank record rather than
+     an error. */
+];
+
+function lookupParcel(lat,lon,cb){
+  var i=0;
+  (function next(){
+    if(i>=PARCEL_SERVICES.length){ reverseGeocode(lat,lon,cb); return; }
+    var svc=PARCEL_SERVICES[i++];
+    var flds=[svc.pin,svc.addr,svc.city,svc.owner,svc.acres,svc.val,svc.cls]
+             .filter(Boolean).join(",");
+    var q=svc.url+"/query?"+[
+      "geometry="+lon+","+lat,
+      "geometryType=esriGeometryPoint",
+      "inSR=4326",
+      "spatialRel=esriSpatialRelIntersects",
+      "outFields="+encodeURIComponent(flds),
+      "returnGeometry=false",
+      "f=json"
+    ].join("&");
+    fetchJSON(q,function(err,j){
+      var f=(!err&&j&&j.features&&j.features[0])?j.features[0].attributes:null;
+      if(!f){ next(); return; }
+      cb(null,{
+        pin:String(f[svc.pin]||"").trim(),
+        addr:String(f[svc.addr]||"").trim(),
+        city:String(f[svc.city]||"").trim(),
+        owner:String(f[svc.owner]||"").trim(),
+        acres:Number(f[svc.acres])||0,
+        val:Number(f[svc.val])||0,
+        cls:String(f[svc.cls]||"").trim(),
+        county:svc.county, src:"assessor"
+      });
+    });
+  })();
+}
+
+/* Nominatim, same service the address box already uses. Address only —
+   no PIN, no owner. Better than a bare coordinate, worse than a parcel. */
+function reverseGeocode(lat,lon,cb){
+  fetchJSON("https://nominatim.openstreetmap.org/reverse?format=json&zoom=18&addressdetails=1"+
+            "&lat="+lat+"&lon="+lon,
+    function(err,j){
+      if(err||!j||!j.address){ cb("No parcel or address found at this point."); return; }
+      var a=j.address;
+      cb(null,{
+        pin:"", owner:"", acres:0, val:0, cls:"",
+        addr:[a.house_number,a.road].filter(Boolean).join(" ")||j.display_name||"",
+        city:a.city||a.town||a.village||a.hamlet||"",
+        county:(a.county||"").replace(/ County$/,""),
+        src:"geocode"
+      });
+    });
+}
 
 function osmNearby(lat,lon,radius,cb){
   var q='[out:json][timeout:20];('
@@ -2510,9 +2681,34 @@ function prettyPhone(p){
   if(d.length!==10) return String(p||"").trim();
   return "("+d.slice(0,3)+") "+d.slice(3,6)+"-"+d.slice(6);
 }
+/* Build a web search for a site's phone number.
+
+   TWO BUGS LIVED HERE:
+
+   1. `addr.split(",")[0]` exists to drop the city off "900 N Church Rd,
+      Elmhurst". But when the address is still a raw coordinate pair —
+      "41.92694, -87.95454" — the same split threw away the LONGITUDE and
+      searched the latitude alone. 41.92694 on its own matched a police
+      department in Massachusetts. Half a coordinate is not a worse
+      location, it is a different one.
+
+   2. With no owner and no business, the query led with an empty quoted
+      string: `"" 41.92694 phone`. Searching for nothing in quotes tells
+      the engine to match nothing, and it falls back to whatever the
+      loose terms hit.
+
+   A coordinate is now sent as a coordinate — both halves, unsplit — and
+   the empty-quote case is dropped rather than emitted. */
 function searchLink(owner,addr){
-  var q='"'+(owner||"").replace(/"/g,"")+'" '+(addr||"").split(",")[0]+' phone';
-  return "https://www.google.com/search?q="+encodeURIComponent(q);
+  var a=String(addr||"").trim();
+  var isCoords=/^-?\d+(\.\d+)?\s*,\s*-?\d+(\.\d+)?$/.test(a);
+  var where=isCoords ? a : a.split(",")[0];
+  var who=String(owner||"").replace(/"/g,"").trim();
+  var parts=[];
+  if(who) parts.push('"'+who+'"');
+  if(where) parts.push(where);
+  parts.push("phone");
+  return "https://www.google.com/search?q="+encodeURIComponent(parts.join(" "));
 }
 
 function findPhones(){
@@ -4849,6 +5045,46 @@ function fld(k,v,sub){
   return '<div class="sf"><span class="k">'+esc(k)+'</span><span class="v">'+v+
          (sub?('<div class="s">'+esc(sub)+'</div>'):'')+'</span></div>';
 }
+/* One click: coordinate -> parcel. Fills the address and PIN in place and
+   writes them onto the row, so the rest of the panel (term sheet, pipeline
+   export, notes) has a real identity to work with instead of a point. */
+function wireSiteLookup(row){
+  var host=document.getElementById("siteCard");
+  if(!host) return;
+  var btn=host.querySelector(".sc-look");
+  if(!btn) return;
+  var wrap=host.querySelector(".sc-lk");
+  var msg=host.querySelector(".sc-msg");
+  var pinEl=host.querySelector(".sc-pin");
+  btn.onclick=function(){
+    var lat=Number(wrap.getAttribute("data-lat"))||row.lat;
+    var lon=Number(wrap.getAttribute("data-lon"))||row.lon;
+    if(lat==null||lon==null){ msg.textContent=" no coordinates on this row"; return; }
+    btn.disabled=true; btn.textContent="Looking up\u2026";
+    lookupParcel(lat,lon,function(err,p){
+      btn.disabled=false; btn.textContent="Look up this location";
+      if(err){ msg.textContent=" "+err; msg.className="sc-msg bad"; return; }
+      /* Write back so a later claim carries the real identity, not a point. */
+      if(p.addr){ row.addr=p.addr+(p.city?(", "+p.city):""); }
+      if(p.pin) row.pin=p.pin;
+      if(p.owner&&!row.owner) row.owner=p.owner;
+      if(p.acres) row.acres=p.acres;
+      if(p.val) row.val=p.val;
+      wrap.innerHTML=esc(row.addr||"")+
+        '<span class="sc-src">'+(p.src==="assessor"
+          ? (esc(p.county)+" assessor")
+          : "OpenStreetMap \u2014 address only, no PIN")+'</span>';
+      if(pinEl) pinEl.textContent=p.pin||"";
+      if(p.src==="assessor"&&(p.acres||p.val)){
+        wrap.innerHTML+='<span class="sc-src">'+
+          (p.acres?(p.acres.toFixed(2)+" acres"):"")+
+          (p.acres&&p.val?" \u00b7 ":"")+
+          (p.val?("$"+p.val.toLocaleString()+" assessed"):"")+'</span>';
+      }
+    });
+  };
+}
+
 function siteCardHtml(r){
   var e=crmGet(r.pin)||{}, S=r.sz, B=r.bm;
   var kwl=function(n){ return n==null?"":(Math.round(n).toLocaleString()+" kW"); };
@@ -4864,8 +5100,20 @@ function siteCardHtml(r){
          'style="color:var(--accent);font-size:11px">search \u2197</a>',r.phoneSrc||"");
 
   h+='<div class="sgrp">Property</div>';
-  h+=fld("Address",esc(r.addr||""));
-  h+=fld("PIN",'<span style="font-family:var(--mono);font-size:11px">'+esc(r.pin||"")+'</span>');
+  /* A bare coordinate is not a site. When the address or PIN is missing —
+     which is every account created from a map click rather than a parcel —
+     offer the county lookup instead of showing "41.92694, -87.95454" in a
+     field labelled Address. */
+  var looksLikeCoords=/^-?\d+\.\d+\s*,\s*-?\d+\.\d+$/.test(String(r.addr||"").trim());
+  var needLookup=(!r.pin || !r.addr || looksLikeCoords);
+  h+=fld("Address", needLookup
+    ? ('<span class="sc-lk" data-lat="'+(r.lat||"")+'" data-lon="'+(r.lon||"")+'">'+
+       (looksLikeCoords||!r.addr ? '<button class="sc-look">Look up this location</button>'
+                                 : esc(r.addr))+
+       '<span class="sc-msg"></span></span>')
+    : esc(r.addr));
+  h+=fld("PIN",'<span class="sc-pin" style="font-family:var(--mono);font-size:11px">'+
+       esc(r.pin||"")+'</span>');
   h+=fld("Class",esc(r.clsLabel||"")+(r.cls?(' <span style="color:var(--dim);font-family:var(--mono);font-size:10px">'+esc(r.cls)+'</span>'):''));
   if(B){
     h+=fld("Building type",esc(B.type||""));
@@ -4959,6 +5207,7 @@ function openDeal(row){
   document.getElementById("dNoteList").innerHTML=row.pin?notesHtml(row.pin):"";
   document.getElementById("dNote").value="";
   document.getElementById("siteCard").innerHTML=siteCardHtml(row);
+  wireSiteLookup(row);
   showDealTab("site");
   document.getElementById("dealWrap").className="open";
   calcDeal();
@@ -5776,6 +6025,41 @@ document.getElementById("fdView").onclick=function(){
 };
 document.getElementById("prospect").onchange=function(){ PROSPECT=this.checked; repaint(); };
 document.getElementById("fiberOn").onchange=function(){ drawFiber(this.checked); };
+
+/* ── GRID INFRASTRUCTURE ──────────────────────────────────────────
+   Substations and transmission, from omega-grid-infra.js. Installed
+   rather than inlined because this file is already 6,000 lines and the
+   layer has its own sources, its own failure modes and its own tests.
+
+   GRID is declared with var at this point in the IIFE, which hoists it —
+   showResult() references it and runs later, on the first click. If the
+   script tag is missing GRID stays null and every call site is guarded,
+   so the tool degrades to exactly what it was before. */
+var GRID=null;
+if(window.OmegaGridInfra&&window.OmegaGridInfra.install){
+  GRID=window.OmegaGridInfra.install({
+    map:map, fetchJSON:fetchJSON, esc:esc, diag:diag,
+    /* Hand it the ComEd base so it can look for a substation layer there
+       first. ComEd's own names match the SUBSTATION field in the capacity
+       panel; the national datasets do not. */
+    comedBase:COMED_BASE,
+    countEl:"subsCount", msgEl:"gridMsg", keyEl:"gridKey", subsCheckbox:"subsOn",
+    /* Clicking a substation asks the real question: what can I put here? */
+    onAnalyze:function(lat,lon){ PANEL_PIN=null; PANEL_CTX=null; analyze(L.latLng(lat,lon)); }
+  });
+}
+if(GRID){
+  document.getElementById("subsOn").onchange=function(){ GRID.setSubs(this.checked); };
+  document.getElementById("linesOn").onchange=function(){ GRID.setLines(this.checked); };
+}else{
+  /* Say why, rather than leaving two checkboxes that do nothing. */
+  var _gm=document.getElementById("gridMsg"), _gk=document.getElementById("gridKey");
+  document.getElementById("subsOn").disabled=true;
+  document.getElementById("linesOn").disabled=true;
+  if(_gk){ _gk.style.display=""; }
+  if(_gm){ _gm.textContent="omega-grid-infra.js not loaded"; }
+  diag("grid: omega-grid-infra.js missing");
+}
 document.getElementById("autoOn").onchange=function(){
   AUTO.on=this.checked;
   if(AUTO.on){ AUTO.key=""; autoLoad(); } else { drawAuto(); autoStatus(""); }

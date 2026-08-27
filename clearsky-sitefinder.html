@@ -890,34 +890,6 @@
       ST.byId[r.id] = r;
     }
 
-    /* Correct any ZIP-centroid pins before anything is attributed to them.
-       A record sitting on the centre of 60608 is on whatever circuit happens
-       to run under that point, which is not the circuit at its address. */
-    fixApproxPins(ST.rows, function (fixed) {
-      if (fixed) {
-        var i;
-        for (i = 0; i < ST.rows.length; i++) {
-          /* Re-join the circuit from the corrected position, then re-score. */
-          if (ST.rows[i].geoSrc) {
-            var hit = LAY.feederAt(ST.rows[i].lat, ST.rows[i].lon);
-            var cap = hit ? LAY.capacityOf(hit) : null;
-            ST.rows[i].feederId = hit ? (hit.feeder || null) : null;
-            ST.rows[i].sub = hit ? (hit.sub || "") : "";
-            if (cap && cap.nameplate != null) {
-              ST.rows[i].nameplate = cap.nameplate;
-              ST.rows[i].queue = cap.queue || 0;
-            }
-          }
-          enrich(ST.rows[i]);
-        }
-        var s = document.getElementById("resS");
-        s.textContent += " " + fixed.toLocaleString() +
-          (fixed === 1 ? " pin was" : " pins were") +
-          " on a ZIP centroid and have been geocoded to their street address.";
-        render();
-      }
-    });
-
     /* Metered energy arrives after the cards are already on screen. That is
        deliberate: a benchmarking round-trip must never hold up results a rep
        could be reading. Rows that match get re-enriched and re-scored in
@@ -2065,6 +2037,23 @@
      when the query carries a house number, the match has to carry the same
      one or it is rejected and the next rung is tried. A wrong point is worse
      than no point, because everything downstream is computed from it. */
+  /* Nominatim allows one request per second, enforced by IP block, and an IP
+     block does not degrade this feature — it breaks the search box for
+     everyone behind the same egress.
+
+     The slot is reserved SYNCHRONOUSLY. The obvious version reads "how long
+     since the last request" inside each caller, but every caller reads the
+     same value before any of them writes it, so five concurrent lookups all
+     compute a zero wait and fire together. Advancing a shared next-slot
+     timestamp at schedule time is what actually serialises them. */
+  var NOMI_NEXT = 0;
+  function nominatimGate(fn) {
+    var now = Date.now();
+    var at = Math.max(now, NOMI_NEXT);
+    NOMI_NEXT = at + 1100;
+    setTimeout(fn, at - now);
+  }
+
   function houseNumberOf(s) {
     /* A house number is a number followed by a STREET. "60653, IL, USA"
        starts with five digits and is a postcode — reading that as a house
@@ -2115,6 +2104,13 @@
     x.send();
 
     function nominatim() {
+      /* Serialised with a one-second gap. Nominatim's usage policy is one
+         request per second, enforced by IP block — and an IP block does not
+         degrade this feature, it breaks the search box for everyone on the
+         same egress. Census is tried first precisely so this is rare. */
+      nominatimGate(function () { nominatimNow(); });
+    }
+    function nominatimNow() {
       var u = "https://nominatim.openstreetmap.org/search?format=json&addressdetails=1" +
         "&countrycodes=us&limit=5&q=" + encodeURIComponent(q);
       var y = new XMLHttpRequest();
@@ -2148,36 +2144,42 @@
     }
   }
 
-  /* Correct the approximate ones, a few at a time so a viewport full of
-     listings does not fire fifty requests at once. Re-attributes the circuit
-     afterwards, because the whole point is that the old one was for the
-     wrong place. */
-  function fixApproxPins(rows, done) {
-    var todo = [], i;
-    for (i = 0; i < rows.length; i++)
-      if (rows[i].approx && rows[i].addr && !rows[i].geoFixed) todo.push(rows[i]);
-    if (!todo.length) { done(0); return; }
-    var n = 0, k = 0, active = 0, LIMIT = 4;
-    (function pump() {
-      while (active < LIMIT && k < todo.length) {
-        (function (r) {
-          active++;
-          geocodeOne(r.addr, r.city, r.zip, function (hit) {
-            active--;
-            r.geoFixed = true;
-            if (hit) {
-              r.lat = hit.lat; r.lon = hit.lon;
-              r.approx = false;
-              r.geoSrc = hit.src;
-              r.geoMatched = hit.matched || "";
-              n++;
-            }
-            if (k >= todo.length && active === 0) done(n); else pump();
-          }, true);
-        })(todo[k++]);
-      }
-      if (!todo.length || (k >= todo.length && active === 0)) done(n);
-    })();
+  /* Approximate pins are corrected ONE AT A TIME, ON DEMAND — never as a
+     sweep over the result set.
+
+     The first version of this geocoded every ZIP-centroid record as the
+     viewport loaded. With 287 EDC listings in view that is hundreds of
+     requests. Nominatim's usage policy is one request per second enforced by
+     IP block, so the sweep throttled the whole origin and the SEARCH BOX
+     started failing — the same address resolving on a retry and not on the
+     first attempt. A background convenience broke the primary feature.
+
+     This codebase already had the rule and I ignored it: one lookup per site
+     opened, never in bulk. So a record's pin is corrected when its card is
+     opened, and at no other time. Until then the marker draws at the ZIP
+     centroid and the card says so in red, which is honest and costs nothing.
+
+     Nominatim requests are additionally serialised with a one-second gap.
+     Census has no such limit and is tried first, so in practice most lookups
+     never reach the throttle at all. */
+  function fixOnePin(r, cb) {
+    if (!r || !r.approx || !r.addr || r.geoFixed) { cb(false); return; }
+    r.geoFixed = true;
+    geocodeOne(r.addr, r.city, r.zip, function (hit) {
+      if (!hit) { cb(false); return; }
+      r.lat = hit.lat; r.lon = hit.lon;
+      r.approx = false;
+      r.geoSrc = hit.src;
+      r.geoMatched = hit.matched || "";
+      /* Re-join the circuit from the corrected position — the old one was
+         for the centre of a postcode. */
+      var f = LAY.feederAt(r.lat, r.lon), cap = f ? LAY.capacityOf(f) : null;
+      r.feederId = f ? (f.feeder || null) : null;
+      r.sub = f ? (f.sub || "") : "";
+      if (cap && cap.nameplate != null) { r.nameplate = cap.nameplate; r.queue = cap.queue || 0; }
+      enrich(r);
+      cb(true);
+    }, true);
   }
 
   function drawMarkers(rows) {
@@ -2344,7 +2346,19 @@
       verifyBlock("busy", r, {}) + drawerHtml(r);
     document.getElementById("drawer").className = "open";
     wireDrawer(r);
-    verifyRecord(r);
+    /* One lookup, for the one site being opened. If this record was pinned to
+       a ZIP centroid, correcting it has to happen BEFORE the circuit is
+       verified — otherwise the verification confirms a circuit for the middle
+       of a postcode. */
+    fixOnePin(r, function (moved) {
+      if (moved) {
+        document.getElementById("dBody").innerHTML =
+          verifyBlock("busy", r, {}) + drawerHtml(r);
+        wireDrawer(r);
+        render();
+      }
+      verifyRecord(r);
+    });
   }
   /* Renders a searched ADDRESS in the same drawer a parcel uses, so a rep
      reads one layout whether the site came off a list or out of the search

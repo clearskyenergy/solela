@@ -365,6 +365,8 @@
     <select id="fType">
       <option value="">Any</option>
       <option value="__ci">Industrial &amp; warehouse</option>
+      <option value="__zoned">Assessor-classed C&amp;I</option>
+      <option value="__vacant">Vacant land only</option>
     </select>
   </div>
   <div class="f">
@@ -1477,8 +1479,19 @@
         if (r.sqft == null) cut.sfUnknown++;
         else if (r.sqft < minSf) { cut.sf++; return false; }
       }
+      /* Two different questions, deliberately separate options.
+           __ci      what the building LOOKS like — modelled from the
+                     business kind or the class label, so it works on demo
+                     data and on records with no class at all.
+           __zoned   what the ASSESSOR says, off the class code the harvest
+                     recorded. Narrower and harder, and the one to use when a
+                     rep needs the parcel to actually be C&I on paper rather
+                     than to resemble it. A record with no class code fails
+                     this filter, because unknown is not a yes. */
       if (type === "__ci" && !/Warehouse|Industrial|Manufacturing|Cold Storage|Flex/.test(r.type)) { cut.type++; return false; }
-      else if (type && type !== "__ci" && r.type !== type) { cut.type++; return false; }
+      else if (type === "__zoned" && !/commercial|industrial|C&I|railroad/i.test(r.clsLabel || "")) { cut.type++; return false; }
+      else if (type === "__vacant" && !/vacant/i.test((r.clsLabel || "") + " " + r.type)) { cut.type++; return false; }
+      else if (type && type.indexOf("__") !== 0 && r.type !== type) { cut.type++; return false; }
       if (circ === "sellable" && !(r.circ.sellable > 0)) { cut.circ++; return false; }
       if (circ === "open" && r.cst.key !== "open") { cut.circ++; return false; }
       if (circ === "partial" && r.cst.key !== "partial") { cut.circ++; return false; }
@@ -1555,6 +1568,83 @@
   }
 
   /* ------------------------------------------------------- circuit meter */
+  /* ══════════════════════════════════════════════════════════════════════
+     WHO ELSE IS ON THIS CIRCUIT
+
+     The ledger already answers "what has MY team claimed here". This answers
+     a different and, for a rep working a corridor, more useful question:
+     what else is standing on the same wire.
+
+     A circuit with 600 kW free and one industrial parcel on it is a site. The
+     same circuit with forty parcels on it is a race — the first credible
+     application takes the headroom and the other thirty-nine get a study
+     that says no. That is the single fact a real-estate listing cannot tell
+     you and this tool can, and it is the reason to look at a map of energy
+     rather than a map of buildings.
+
+     Counted from what is loaded in the current view, so it is a floor rather
+     than a total, and it says so. Widening the map raises the number.
+     ══════════════════════════════════════════════════════════════════════ */
+  function circuitPeers(feederId, exceptId) {
+    var out = { n: 0, ci: 0, kw: 0, biggest: null, claimed: 0 };
+    if (!feederId || feederId === "\u2014") return out;
+    var i, r;
+    for (i = 0; i < ST.rows.length; i++) {
+      r = ST.rows[i];
+      if (String(r.feederId) !== String(feederId)) continue;
+      if (exceptId && r.id === exceptId) continue;
+      out.n++;
+      if (/Warehouse|Industrial|Manufacturing|Cold Storage|Flex/.test(r.type)) out.ci++;
+      if (r.sz && r.sz.kw) {
+        out.kw += r.sz.kw;
+        if (!out.biggest || r.sz.kw > out.biggest.sz.kw) out.biggest = r;
+      }
+      if (r.mine && r.mine.length) out.claimed++;
+    }
+    return out;
+  }
+
+  function peersHtml(r) {
+    var p = circuitPeers(r.feederId, r.id);
+    var st = r.circ;
+    if (!p.n) {
+      return '<div class="sec"><h4>Others on this circuit</h4><p class="note">' +
+        'No other property in the current view sits on ' + esc(r.feederId) +
+        '. That is a floor, not a total \u2014 widen the map to see the rest of ' +
+        'the circuit.</p></div>';
+    }
+    var lines = [];
+    lines.push('<b>' + p.n + '</b> other propert' + (p.n === 1 ? "y" : "ies") +
+      ' in view sit' + (p.n === 1 ? "s" : "") + ' on ' + esc(r.feederId) +
+      (p.ci ? ', <b>' + p.ci + '</b> of them commercial or industrial' : "") + '.');
+
+    /* The competitive read. Deliberately not a score — it is a ratio a rep
+       can check, and the arithmetic is shown so nobody has to trust it. */
+    if (st.known && st.sellable > 0 && p.kw > 0) {
+      var ratio = p.kw / st.sellable;
+      lines.push('If every one of them sized a battery to its own load, that is ' +
+        '<b>' + fmt(p.kw) + ' kW</b> of demand chasing <b>' + fmt(st.sellable) +
+        ' kW</b> of headroom' +
+        (ratio > 1
+          ? ' \u2014 the circuit cannot carry them all. Whoever files a credible ' +
+            'application first takes it.'
+          : ' \u2014 enough for all of them, so this circuit is not the constraint.'));
+    }
+    if (p.biggest && p.biggest.sz.kw) {
+      lines.push('The largest is <b>' + esc(p.biggest.addr) + '</b> at ' +
+        fmt(p.biggest.sz.kw) + ' kW.');
+    }
+    if (p.claimed) {
+      lines.push('<b>' + p.claimed + '</b> of them already carr' +
+        (p.claimed === 1 ? "ies" : "y") + ' a claim from your own team \u2014 ' +
+        'that capacity is already counted against the free figure above.');
+    }
+    lines.push('<small>Counted from the current view only. Widen the map to ' +
+      'see the whole circuit.</small>');
+    return '<div class="sec"><h4>Others on this circuit</h4>' +
+      '<p class="note">' + lines.join("<br>") + '</p></div>';
+  }
+
   function meterHtml(st, tall) {
     if (!st.known) {
       return '<div class="meter' + (tall ? ' tall' : '') + '">' +
@@ -1798,19 +1888,24 @@
     if (!p) return "";
     var bits = [];
     if (p.pin) bits.push("PIN <b>" + esc(p.pin) + "</b>");
-    if (p.acres) bits.push("<b>" + p.acres.toFixed(2) + "</b> acres");
-    if (p.val) bits.push("assessed <b>$" + fmt(p.val) + "</b>");
-    if (p.cls) bits.push("class <b>" + esc(p.cls) + "</b>");
+    /* Which COLUMN each value was read from. Two tools built against this
+       same county have disagreed about that more than once, and a blank
+       owner because the field name is wrong looks identical to a parcel with
+       no owner recorded. Showing the column turns a silent blank into an
+       obvious one. */
+    var prov = [];
+    if (p.fields) {
+      if (p.fields.addr) prov.push("address from " + esc(p.fields.addr));
+      if (p.fields.owner) prov.push("owner from " + esc(p.fields.owner));
+      if (p.fields.pin) prov.push("PIN from " + esc(p.fields.pin));
+    }
     return '<div class="sec"><h4>Parcel under this pin</h4>' +
-      '<p class="note"><b>' + esc(p.addr || "address not recorded") + '</b>' +
-      (p.city ? ", " + esc(p.city) : "") + " \u2014 " + esc(p.county) + " County. " +
-      bits.join(" \u00b7 ") +
-      (p.owner ? ".<br>Owner of record: <b>" + esc(p.owner) + "</b>" : "") +
-      /* The assessor layer's own description gives its completeness year.
-         An owner from 2016 renders exactly like today's owner unless the
-         year is said out loud. */
-      (p.asOf ? '. <br><small>County data complete to assessment year ' +
-        esc(p.asOf) + " \u2014 owner and value may have changed since.</small>" : ".") +
+      '<p class="note"><b>' + esc(p.addr || "address field returned nothing") + '</b>' +
+      " \u2014 " + esc(p.county) + ". " + bits.join(" \u00b7 ") +
+      (p.owner ? "<br>Owner of record: <b>" + esc(p.owner) + "</b>"
+               : "<br>Owner field returned nothing.") +
+      (prov.length ? '<br><small>' + prov.join(" \u00b7 ") + "</small>" : "") +
+      (p.note ? '<br><small>' + esc(p.note) + "</small>" : "") +
       '</p></div>';
   }
 
@@ -2165,6 +2260,10 @@
     /* -- who else is on this circuit ------------------------------------
        The reason the tool exists. Anything live here means the circuit is
        spoken for and a second battery on the next block is not a deal. */
+    /* Who else is standing on the wire comes BEFORE the filing history:
+       a rep scanning a card needs the competitive picture before the
+       paperwork trail. */
+    h.push(peersHtml(r));
     h.push('<div class="sec"><h4>Interconnection activity on this circuit</h4>');
     if (!live.length && !st.queue) {
       h.push('<div class="note">Nothing filed and nothing held. The full ' +

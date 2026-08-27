@@ -96,57 +96,100 @@
      a wrong mapping returns a blank field rather than an error, which is
      indistinguishable from a parcel that genuinely has no owner recorded.
      ══════════════════════════════════════════════════════════════════════ */
-  S.PARCEL_SERVICES = [
-    { county: "DuPage",
-      url: "https://gis.dupageco.org/arcgis/rest/services/DuPage_County_IL/ParcelsWithRealEstateCC/MapServer/0",
-      pin: "PIN", addr: "PROPADDRL1", city: "PROPCITY", owner: "PROPNAME",
-      acres: "ACREAGE", val: "REA017_FCV_TOTAL", cls: "REA017_PROP_CLASS",
-      /* This layer's own description says the data are complete to
-         Assessment Year 2016, so owner and value are potentially a decade
-         old. Shown with the year attached rather than as today's truth. */
-      asOf: "2016" }
-  ];
+  /* ══════════════════════════════════════════════════════════════════════
+     PARCEL UNDER A POINT
+
+     The county registry lives in the Worker, not here. It exposes it at
+     /counties and proxies each county at /parcel/<key>/query, so adding a
+     county is a Worker deploy rather than a change to every page that asks
+     about parcels. Two tools reading two hardcoded lists is how they end up
+     disagreeing about which field holds the owner — which has already
+     happened on DuPage.
+
+     Going through the proxy also solves CORS: county servers vary in what
+     they allow, and the Worker answers with a permissive header regardless.
+
+     Note the geometry type: a POINT, not an envelope. ComEd's circuits get
+     an envelope because a buffer boundary is approximate and a click on the
+     kerb should still find the circuit down the street. A parcel boundary is
+     a legal line — the point is either inside it or on the neighbour's land,
+     and widening that query would return whichever parcel sorted first.
+     ══════════════════════════════════════════════════════════════════════ */
+  S.PROXY_ROOT = "https://comed-proxy.clearsky-omega.workers.dev";
+  var COUNTIES = null, countiesBusy = false, countiesQ = [];
+
+  function getJSONx(url, cb) {
+    var x = new XMLHttpRequest();
+    try { x.open("GET", url, true); } catch (e) { cb(e); return; }
+    x.timeout = 20000;
+    x.onreadystatechange = function () {
+      if (x.readyState !== 4) return;
+      if (x.status < 200 || x.status >= 300) { cb(new Error("HTTP " + x.status)); return; }
+      var j = null;
+      try { j = JSON.parse(x.responseText); } catch (e) { cb(e); return; }
+      cb(null, j);
+    };
+    x.ontimeout = function () { cb(new Error("timed out")); };
+    x.onerror = function () { cb(new Error("network error")); };
+    x.send();
+  }
+
+  S.counties = function (cb) {
+    if (COUNTIES) { cb(null, COUNTIES); return; }
+    countiesQ.push(cb);
+    if (countiesBusy) return;
+    countiesBusy = true;
+    getJSONx(S.PROXY_ROOT + "/counties", function (err, j) {
+      countiesBusy = false;
+      COUNTIES = (!err && j && !j.error) ? j : {};
+      var qs = countiesQ; countiesQ = [];
+      for (var i = 0; i < qs.length; i++) qs[i](err || null, COUNTIES);
+    });
+  };
 
   S.parcelAt = function (lat, lon, cb) {
-    var i = 0;
-    (function next() {
-      if (i >= S.PARCEL_SERVICES.length) { cb(null, null); return; }
-      var svc = S.PARCEL_SERVICES[i++];
-      var flds = [svc.pin, svc.addr, svc.city, svc.owner, svc.acres, svc.val, svc.cls]
-                 .filter(Boolean).join(",");
-      var q = svc.url + "/query?" + [
-        "geometry=" + lon + "," + lat,
-        "geometryType=esriGeometryPoint",
-        "inSR=4326",
-        "spatialRel=esriSpatialRelIntersects",
-        "outFields=" + encodeURIComponent(flds),
-        "returnGeometry=false",
-        "f=json"
-      ].join("&");
-      var x = new XMLHttpRequest();
-      x.open("GET", q, true);
-      x.timeout = 20000;
-      x.onreadystatechange = function () {
-        if (x.readyState !== 4) return;
-        var j = null;
-        try { j = JSON.parse(x.responseText); } catch (e) {}
-        var f = (j && j.features && j.features[0]) ? j.features[0].attributes : null;
-        if (!f) { next(); return; }
-        cb(null, {
-          pin: String(f[svc.pin] || "").trim(),
-          addr: String(f[svc.addr] || "").trim(),
-          city: String(f[svc.city] || "").trim(),
-          owner: String(f[svc.owner] || "").trim(),
-          acres: Number(f[svc.acres]) || 0,
-          val: Number(f[svc.val]) || 0,
-          cls: String(f[svc.cls] || "").trim(),
-          county: svc.county, asOf: svc.asOf || "", src: "assessor"
+    S.counties(function (err, reg) {
+      var keys = [], k;
+      for (k in reg) if (reg.hasOwnProperty(k)) keys.push(k);
+      /* Regrid last: it is licensed and covers all 102 counties, so it is the
+         fallback rather than the first thing asked. A free county answer is
+         also the county's own record, which is the one a rep will be quoted
+         back at them. */
+      keys.sort(function (a, b) { return (a === "regrid") - (b === "regrid"); });
+      var i = 0;
+      (function next() {
+        if (i >= keys.length) { cb(null, null); return; }
+        var key = keys[i++], cfg = reg[key];
+        var flds = [cfg.idField, cfg.addr, cfg.owner].filter(Boolean).join(",");
+        var q = S.PROXY_ROOT + "/parcel/" + key + "/query?" + [
+          "geometry=" + lon + "," + lat,
+          "geometryType=esriGeometryPoint",
+          "inSR=4326",
+          "spatialRel=esriSpatialRelIntersects",
+          "outFields=" + encodeURIComponent(flds || "*"),
+          "returnGeometry=false",
+          "f=json"
+        ].join("&");
+        getJSONx(q, function (e2, j) {
+          var f = (!e2 && j && !j.error && j.features && j.features[0])
+                    ? j.features[0].attributes : null;
+          if (!f) { next(); return; }
+          /* Report which field each value came from. When two tools disagree
+             about a county's schema — and they have — the card should show
+             what it read, not just what it concluded. */
+          cb(null, {
+            county: cfg.label || key, countyKey: key,
+            pin: cfg.idField ? String(f[cfg.idField] || "").trim() : "",
+            addr: cfg.addr ? String(f[cfg.addr] || "").trim() : "",
+            owner: cfg.owner ? String(f[cfg.owner] || "").trim() : "",
+            fields: { pin: cfg.idField || null, addr: cfg.addr || null,
+                      owner: cfg.owner || null },
+            note: cfg.note || "",
+            raw: f, src: "assessor"
+          });
         });
-      };
-      x.ontimeout = function () { next(); };
-      x.onerror = function () { next(); };
-      x.send();
-    })();
+      })();
+    });
   };
 
   S.register = function (key, impl) { S.providers[key] = impl; return impl; };

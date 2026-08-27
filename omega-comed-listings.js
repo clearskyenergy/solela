@@ -142,6 +142,12 @@
       sqft: sqft, lotAcres: acres,
       type: type,
       subtype: str(r.bizKind || r.cls) || "Industrially classed parcel",
+      /* The assessor's own words, carried through rather than only used to
+         pick a type. The "assessor-classed C&I" filter runs on this, and a
+         card that shows a class it cannot be filtered by is a card a rep
+         cannot act on. */
+      clsLabel: str(r.clsLabel),
+      cls: str(r.cls),
       yearBuilt: num(r.yearBuilt),
       /* The operating business leads where we have one — that is who answers
          the phone. On industrial land the assessor's owner of record is

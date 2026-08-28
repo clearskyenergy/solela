@@ -529,6 +529,11 @@
          latitude/longitude if you have them. Every imported site is scored
          and joined to its circuit like any other.</p>
       <div class="setKeyRow">
+        <button id="setTemplate" style="background:var(--panel2);color:var(--ink)">Download CSV template</button>
+      </div>
+      <p class="setKeyMsg">Fill it in, delete the example row, and upload it below.
+         Extra columns are ignored, and you can leave any column blank.</p>
+      <div class="setKeyRow">
         <input type="file" id="setImportFile" accept=".csv,text/csv" style="flex:1">
       </div>
       <p id="setImportMsg" class="setKeyMsg"></p>
@@ -656,7 +661,7 @@
      Shown in Settings and stamped into the diagnostics log. Several rounds of
      debugging have been spent on the question "is the deployed file the one
      we just changed", and a screenshot cannot answer it. Now it can. */
-  var CS_BUILD = "2026-08-28 11:49 UTC";
+  var CS_BUILD = "2026-08-28 12:32 UTC";
 
   function savedTileKey() {
     try { return window.localStorage.getItem("cs.tileKey") || ""; }
@@ -1570,6 +1575,19 @@
     }
     importHave();
 
+    document.getElementById("setTemplate").onclick = function () {
+      var blob = new Blob([templateCsv()], { type: "text/csv;charset=utf-8" });
+      var a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = "clearsky-site-import-template.csv";
+      document.body.appendChild(a); a.click(); document.body.removeChild(a);
+      setTimeout(function () { URL.revokeObjectURL(a.href); }, 2000);
+      var m = document.getElementById("setImportMsg");
+      m.className = "setKeyMsg good";
+      m.textContent = "Template downloaded. Latitude and longitude are optional \u2014 " +
+        "leave them blank and press Geocode after importing.";
+    };
+
     document.getElementById("setImportFile").onchange = function () {
       var f = this.files && this.files[0];
       var msg = document.getElementById("setImportMsg");
@@ -2185,6 +2203,38 @@
     return map;
   }
 
+  /* The template's headers are the ones the matcher recognises first, so a
+     file built from it maps cleanly with nothing to check. There is a
+     round-trip test asserting exactly that — if a pattern above is ever
+     changed without updating this, the test fails rather than the import
+     silently losing a column.
+
+     The example row is deliberately marked. People forget to delete sample
+     rows, and a fake warehouse scoring 60 in someone's pipeline is worse
+     than an empty file, so the importer skips anything whose address starts
+     with EXAMPLE. */
+  var TEMPLATE_COLS = [
+    "Property Address", "City", "ZIP", "Owner Name", "Owner Phone",
+    "Owner Email", "Contact Name", "Building SF", "Lot Acres", "Year Built",
+    "Property Class", "PIN", "Assessed Value", "Latitude", "Longitude"
+  ];
+  var TEMPLATE_EXAMPLE = [
+    "EXAMPLE - delete this row - 2607 W 17th St", "Chicago", "60608",
+    "KEDZIE HOLDINGS LLC", "312-555-0100", "owner@example.com", "Jane Broker",
+    "142000", "4.2", "1974", "Warehouse", "16241000010000", "2100000",
+    "41.85830", "-87.69102"
+  ];
+
+  function csvCell(v) {
+    v = String(v == null ? "" : v);
+    return /[",\n]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v;
+  }
+  function templateCsv() {
+    return TEMPLATE_COLS.map(csvCell).join(",") + "\n" +
+           TEMPLATE_EXAMPLE.map(csvCell).join(",") + "\n";
+  }
+  function isExampleRow(addr) { return /^\s*EXAMPLE\b/i.test(String(addr || "")); }
+
   var IMPORT_PENDING = null;
 
   function describeMapping(header, map, nRows) {
@@ -2211,6 +2261,7 @@
       r = rows[i];
       addr = map.addr == null ? "" : String(r[map.addr] || "").trim();
       if (!addr) continue;
+      if (isExampleRow(addr)) continue;   /* the template's sample row */
       lat = map.lat == null ? null : num(r[map.lat]);
       lon = map.lon == null ? null : num(r[map.lon]);
       out.push({

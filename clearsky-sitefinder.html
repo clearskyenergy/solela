@@ -126,12 +126,16 @@
     margin-bottom:12px;cursor:pointer;transition:box-shadow .14s,border-color .14s;
     display:flex;flex-direction:column}
   body.v-list .card,body.v-saved .card{margin-bottom:0}
-  .star{position:absolute;top:8px;right:8px;z-index:3;width:30px;height:30px;
+  .star,.hide{position:absolute;top:8px;z-index:3;width:30px;height:30px;
     border:0;border-radius:50%;background:rgba(255,255,255,.92);color:#8a94a0;
     font-size:17px;line-height:28px;cursor:pointer;padding:0;
     box-shadow:0 1px 3px rgba(26,39,51,.22)}
+  .star{right:8px}
+  .hide{right:44px;font-size:15px}
   .star.on{color:#c98a2b}
   .star:hover{background:#fff;color:#c98a2b}
+  .hide:hover{background:#fff;color:#e0533d}
+  /* The status pill moves down so the controls never sit on top of it. */
   .card:hover,.card.hot{box-shadow:0 6px 20px rgba(26,39,51,.13);border-color:#c3cdd7}
   .card:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
   .card.blocked{background:#fffaf9}
@@ -140,7 +144,7 @@
   .card .ph .badge{position:absolute;left:9px;top:9px;background:rgba(255,255,255,.94);
     border-radius:6px;padding:3px 8px;font-size:10px;font-weight:700;color:var(--ink);
     letter-spacing:.04em;text-transform:uppercase}
-  .card .ph .cst{position:absolute;right:9px;top:9px;border-radius:6px;padding:3px 8px;
+  .card .ph .cst{position:absolute;right:9px;top:44px;border-radius:6px;padding:3px 8px;
     font-size:10px;font-weight:700;color:#fff;letter-spacing:.03em}
   .card .bd{padding:11px 13px 13px}
   .card .kw{font-size:21px;font-weight:700;letter-spacing:-.02em;line-height:1.1}
@@ -465,6 +469,16 @@
          this field is enough to go live.</em></p>
     </section>
 
+    <section id="setHiddenSec">
+      <h5>Hidden sites</h5>
+      <p>Sites you have dismissed with the &times; on a card. They stay hidden
+         across reloads and never appear in results.</p>
+      <div class="setKeyRow">
+        <button id="setUnhide">Show all again</button>
+      </div>
+      <p id="setHiddenMsg" class="setKeyMsg"></p>
+    </section>
+
     <section>
       <h5>Diagnostics</h5>
       <p>Every ComEd request this page has made, most recent last, with the
@@ -552,6 +566,8 @@
        should not leave twenty cards in the panel. Starring is what promotes
        it into `saved`. */
     current: null,
+    /* Records the rep has dismissed. Persisted, reversible in Settings. */
+    hidden: [],
     byId: {},
     view: "split",
     sel: null,
@@ -598,7 +614,7 @@
      Shown in Settings and stamped into the diagnostics log. Several rounds of
      debugging have been spent on the question "is the deployed file the one
      we just changed", and a screenshot cannot answer it. Now it can. */
-  var CS_BUILD = "2026-08-28 00:36 UTC";
+  var CS_BUILD = "2026-08-28 00:43 UTC";
 
   function savedTileKey() {
     try { return window.localStorage.getItem("cs.tileKey") || ""; }
@@ -1420,6 +1436,21 @@
         (lines.length ? lines.join("\n") : "No ComEd requests yet.");
       el.scrollTop = el.scrollHeight;
     }
+    /* Hidden sites. Reversible, and the count is shown so a rep who has
+       hidden something and forgotten can find it. */
+    function paintHidden() {
+      var m = document.getElementById("setHiddenMsg");
+      m.textContent = ST.hidden.length
+        ? ST.hidden.length + (ST.hidden.length === 1 ? " site is hidden." : " sites are hidden.")
+        : "Nothing is hidden.";
+      document.getElementById("setUnhide").disabled = !ST.hidden.length;
+    }
+    document.getElementById("setUnhide").onclick = function () {
+      unhideAll(); paintHidden(); render();
+    };
+    document.getElementById("setOpen").addEventListener("click", paintHidden);
+    paintHidden();
+
     document.getElementById("setBuild").textContent = CS_BUILD;
     document.getElementById("setDiagRefresh").onclick = paintDiag;
     document.getElementById("setDiagCopy").onclick = function () {
@@ -1724,6 +1755,44 @@
     if (ST.current && ST.current.id === rec.id) ST.current = null;
   }
 
+  /* ══════════════════════════════════════════════════════════════════════
+     HIDDEN SITES
+
+     Some records keep coming back and are not worth looking at — an EDC
+     listing pinned near a corridor a rep works, a parcel already ruled out.
+     Filters cannot express "not this one", and a card a rep has consciously
+     rejected reappearing on every pan is noise that trains them to ignore
+     the panel.
+
+     Hiding is per-record, persistent, and reversible from Settings. It never
+     touches the underlying data — a hidden site is still in the export if it
+     is starred, because a deliberate keep outranks a dismissal.
+     ══════════════════════════════════════════════════════════════════════ */
+  function loadHidden() {
+    try {
+      var raw = window.localStorage.getItem("cs.hiddenSites");
+      return raw ? JSON.parse(raw) : [];
+    } catch (e) { return []; }
+  }
+  function persistHidden() {
+    try { window.localStorage.setItem("cs.hiddenSites", JSON.stringify(ST.hidden)); }
+    catch (e) { /* private mode */ }
+  }
+  function isHidden(id) {
+    for (var i = 0; i < ST.hidden.length; i++) if (ST.hidden[i] === id) return true;
+    return false;
+  }
+  function hideSite(id) {
+    if (!id || isHidden(id)) return;
+    ST.hidden.push(id);
+    persistHidden();
+    /* Hiding something starred removes the star too — keeping and dismissing
+       the same site at once is a contradiction the panel cannot show. */
+    if (isSaved(id)) unsaveSite(id);
+    if (ST.current && ST.current.id === id) ST.current = null;
+  }
+  function unhideAll() { ST.hidden = []; persistHidden(); }
+
   function unsaveSite(id) {
     ST.saved = ST.saved.filter(function (s) { return s.id !== id; });
     persistSaved();
@@ -1778,6 +1847,7 @@
        are exempt because keeping them is the whole point. */
     var vb = map.getBounds();
     rows = rows.filter(function (r) {
+      if (isHidden(r.id)) return false;     /* dismissed by the rep */
       if (isSaved(r.id)) return false;      /* merged in below instead */
       if (r.lat == null || r.lon == null) return true;
       return vb.contains([r.lat, r.lon]);
@@ -2133,6 +2203,8 @@
         /* The star sits on the card itself so a site can be kept without
            opening it — a rep scanning a corridor should be able to flag
            three sites and come back to them, not open three panels. */
+        '<button class="hide" data-hide="' + esc(r.id) + '" title="Hide this site" ' +
+          'aria-label="Hide this site">\u00d7</button>' +
         '<button class="star' + (isSaved(r.id) ? ' on' : '') +
           '" data-star="' + esc(r.id) + '" title="' +
           (isSaved(r.id) ? "Starred \u2014 click to remove" : "Star this site") +
@@ -3628,6 +3700,13 @@
   document.getElementById("cards").addEventListener("click", function (e) {
     /* The star must not also open the card — a rep flagging three sites in a
        row should not have three panels open behind them. */
+    var hb = e.target.closest ? e.target.closest("[data-hide]") : null;
+    if (hb) {
+      e.stopPropagation();
+      hideSite(hb.getAttribute("data-hide"));
+      render();
+      return;
+    }
     var s = e.target.closest ? e.target.closest("[data-star]") : null;
     if (s) {
       e.stopPropagation();
@@ -3896,6 +3975,7 @@
      rep's own list immediately rather than an empty panel that fills in
      later — the gap is what makes people think the work was lost. */
   ST.saved = loadSaved();
+  ST.hidden = loadHidden();
   wireSettings();
   wireLayers();
   render();

@@ -672,7 +672,7 @@
      Shown in Settings and stamped into the diagnostics log. Several rounds of
      debugging have been spent on the question "is the deployed file the one
      we just changed", and a screenshot cannot answer it. Now it can. */
-  var CS_BUILD = "2026-08-28 16:37 UTC";
+  var CS_BUILD = "2026-08-28 16:49 UTC";
 
   function savedTileKey() {
     try { return window.localStorage.getItem("cs.tileKey") || ""; }
@@ -4645,55 +4645,64 @@
         return;
       }
 
-      /* THE TOKEN DECIDES WHICH ORG, NOT THE URL.
+      /* THE EMAIL DOMAIN DECIDES WHICH ORG. NOT A CUSTOM CLAIM.
 
-         ORG came from ?org= in the address bar, and the Firestore rules
-         compare the queried orgId against request.auth.token.orgId. If those
-         two strings differ by so much as a suffix, Firestore refuses the
-         whole query and the only symptom is "Missing or insufficient
-         permissions" — which reads like a rules problem when it is really a
-         mismatched or absent custom claim.
+         An earlier version of this read request.auth.token.orgId, on the
+         assumption the project used custom claims. It does not. Every
+         collection in the deployed ruleset — projects, sites, team_*,
+         slc_*, om_*, equipment, intake_projects — resolves the org through
+         userOrg(), which is the signed-in EMAIL DOMAIN folded through
+         orgAlias() and lowercased. Nothing anywhere reads a claim.
 
-         So the claim wins when it exists. A URL parameter is a convenience;
-         the token is what the database will actually accept. */
-      u.getIdTokenResult().then(function (tok) {
-        var claims = (tok && tok.claims) || {};
-        var claimOrg = claims.orgId || claims.org || claims.tenantId || null;
+         So the domain is what the database will accept, and ?org= in the
+         URL is only a hint. When they disagree the domain wins, because a
+         query filtered on anything else is refused outright — Firestore
+         permits a list query only when it can prove every returned document
+         passes, and userOrg() is what the rule compares against.
 
-        if (!claimOrg) {
-          localMode("Signed in as " + (u.email || u.uid) + ", but this account's " +
-            "token carries NO orgId claim. The Firestore rules match " +
-            "request.auth.token.orgId against the record's orgId, so with no " +
-            "claim every read is refused. Someone with admin access has to set " +
-            "the custom claim on this user \u2014 it cannot be fixed from the " +
-            "browser. Until then the ledger cannot be shared." +
-            (claims ? "  Claims present: " +
-              (Object.keys(claims).join(", ") || "none") + "." : ""));
-          return;
-        }
+         orgAlias() is mirrored here. A tenant signing in from a regional
+         domain folds onto the org their records are actually stamped with;
+         without the fold they resolve to an empty workspace of their own
+         and cannot write anything. Keep this list in step with the
+         orgAlias() function in the rules — if they drift, that tenant is
+         locked out of the ledger and nothing says why. */
+      var ORG_ALIAS = { "fenecon.de": "fenecon.com", "fenecon.us": "fenecon.com" };
+      var email = String(u.email || "").toLowerCase();
+      var domain = email.indexOf("@") > 0 ? email.split("@")[1] : "";
+      var mine = ORG_ALIAS[domain] || domain;
 
-        if (claimOrg !== ORG) {
-          /* Recoverable, and worth recovering automatically: the account is
-             valid, the page was just opened with the wrong org in the URL. */
-          var was = ORG;
-          ORG = claimOrg;
-          attachNow(u, "Opened with ?org=" + was + " but this account belongs to " +
-                       claimOrg + ". Using the account's org.");
-          return;
-        }
+      if (!mine) {
+        localMode("Signed in as " + (u.email || u.uid) + ", but no email domain " +
+          "could be read from that account. The ledger resolves the " +
+          "organisation from the email domain, so a sign-in without one " +
+          "cannot be scoped to a team.");
+        return;
+      }
+
+      if (mine !== ORG) {
+        var was = ORG;
+        ORG = mine;
+        attachNow(u, "Opened with ?org=" + was + " but signed in as " +
+                     email + ", so the ledger is scoped to " + mine + ".");
+      } else {
         attachNow(u, "");
-      }).catch(function (e) {
-        localMode("Could not read this account's token: " + (e.message || e));
-      });
+      }
 
       function attachNow(u2, note) {
         L.attach(db, ORG, function (err) {
           if (err) {
-            localMode("Signed in as " + (u2.email || u2.uid) + " with orgId \u201c" +
-              ORG + "\u201d, and Firestore still refused: " + (err.message || err) +
-              ". The token is fine, so the Firestore RULES for " +
-              "capacityAllocations are not deployed on this project \u2014 that " +
-              "is the remaining explanation.");
+            /* The org resolved correctly from the email domain, which is
+               exactly what the rules compare against — so the remaining
+               explanation is that the collection has no rules at all.
+               capacityAllocations is absent from the merged ruleset;
+               Firestore denies by default. See
+               later/firestore-clearsky-ledger.rules. */
+            localMode("Signed in as " + (u2.email || u2.uid) + ", org resolved to " +
+              "\u201c" + ORG + "\u201d from the email domain, and Firestore still " +
+              "refused: " + (err.message || err) + ". The org is right, so the " +
+              "capacityAllocations collection has NO RULES in the deployed " +
+              "ruleset \u2014 Firestore denies by default. Deploy the block in " +
+              "later/firestore-clearsky-ledger.rules.");
             return;
           }
           var t = document.getElementById("srcTag");

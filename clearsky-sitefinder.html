@@ -471,6 +471,19 @@
          this field is enough to go live.</em></p>
     </section>
 
+    <section>
+      <h5>Your name on claims</h5>
+      <p>What a colleague sees next to a hold you have made, so they know who
+         to call. Type anything &mdash; a first name, a nickname, a crew. It is
+         a label, not a login, and nothing is validated against it.</p>
+      <div class="setKeyRow">
+        <input type="text" id="setRepName" placeholder="Filled in from your account"
+               maxlength="60" style="flex:1">
+        <button id="setRepClear" style="background:var(--panel2);color:var(--ink)">Use my account name</button>
+      </div>
+      <p id="setRepMsg" class="setKeyMsg"></p>
+    </section>
+
     <section id="setHiddenSec">
       <h5>Hidden sites</h5>
       <p>Sites you have dismissed with the &times; on a card. They stay hidden
@@ -672,7 +685,7 @@
      Shown in Settings and stamped into the diagnostics log. Several rounds of
      debugging have been spent on the question "is the deployed file the one
      we just changed", and a screenshot cannot answer it. Now it can. */
-  var CS_BUILD = "2026-08-28 16:49 UTC";
+  var CS_BUILD = "2026-08-28 17:30 UTC";
 
   function savedTileKey() {
     try { return window.localStorage.getItem("cs.tileKey") || ""; }
@@ -1571,6 +1584,42 @@
     };
     document.getElementById("setOpen").addEventListener("click", paintHidden);
     paintHidden();
+
+    /* ---- your name on claims ----------------------------------------
+       Editable here as well as from the chip, because a prompt you have to
+       know to click is not really editable. Saves as you type, so there is
+       no button to forget. */
+    var repIn = document.getElementById("setRepName");
+    var repMsg = document.getElementById("setRepMsg");
+    function paintRepSetting() {
+      repIn.value = ST.rep || "";
+      repMsg.className = "setKeyMsg";
+      repMsg.textContent = ST.rep
+        ? "Claims you make will read \u201c" + ST.rep + "\u201d."
+        : "No name set \u2014 claims will carry no label. They are still " +
+          "attributed to your account.";
+    }
+    repIn.oninput = function () {
+      setRep(this.value, true);
+      repMsg.className = "setKeyMsg good";
+      repMsg.textContent = ST.rep
+        ? "Saved. Claims will read \u201c" + ST.rep + "\u201d."
+        : "Cleared.";
+    };
+    document.getElementById("setRepClear").onclick = function () {
+      /* Back to whatever the account says, which is what a new sign-in
+         would have produced. */
+      ST.rep = "";
+      try { window.localStorage.removeItem("cs.repName"); } catch (e) {}
+      if (window.firebase && firebase.apps && firebase.apps.length) {
+        var u = firebase.auth().currentUser;
+        if (u) seedRepFromAccount(u);
+      }
+      paintRep();
+      paintRepSetting();
+    };
+    document.getElementById("setOpen").addEventListener("click", paintRepSetting);
+    paintRepSetting();
 
     /* ---- import a property list ------------------------------------- */
     function importHave() {
@@ -4533,15 +4582,72 @@
     }
   }
 
-  /* ----------------------------------------------------------------- rep */
-  document.getElementById("repChip").onclick = function () {
-    var n = window.prompt("Your name. It is stamped on every claim you make, so the team knows who to call.", ST.rep || "");
-    if (n == null) return;
-    ST.rep = n.trim();
+  /* ----------------------------------------------------------------- rep
+
+     The name on a claim is a LABEL for a colleague to read — "who do I call
+     about this hold" — and nothing more. It is deliberately free text: type
+     a first name, a nickname, a crew, whatever your team actually says out
+     loud. Nothing is validated against it and nothing is refused because of
+     it.
+
+     ⚠ THE RULES ONCE COMPARED THIS FIELD TO THE SIGNED-IN EMAIL and refused
+     every claim, because "Tommy" is not "tommy@example.com". Identity is
+     pinned on the uid and email the ledger stamps itself; this stays a
+     label. Do not reintroduce a check on it.
+
+     It also SEEDS ITSELF from the signed-in account, so nobody has to type
+     anything before making their first hold. Whatever is typed afterwards
+     wins and is remembered. */
+  function paintRep() {
+    var chip = document.getElementById("repChip");
+    if (chip) chip.title = ST.rep
+      ? "Claims you make read \u201c" + ST.rep + "\u201d. Click to change."
+      : "Click to set the name that appears on your claims.";
+    /* The Settings field mirrors this whenever it exists, so the two views of
+       the same value cannot drift apart. */
+    var si = document.getElementById("setRepName");
+    if (si && document.activeElement !== si) si.value = ST.rep || "";
     document.getElementById("repName").textContent = ST.rep || "Set your name";
     document.getElementById("repAv").textContent = ST.rep
-      ? ST.rep.split(/\s+/).slice(0, 2).map(function (w) { return w.charAt(0).toUpperCase(); }).join("")
+      ? ST.rep.split(/\s+/).slice(0, 2)
+          .map(function (w) { return w.charAt(0).toUpperCase(); }).join("")
       : "\u2014";
+  }
+
+  function setRep(name, remember) {
+    ST.rep = String(name || "").trim();
+    paintRep();
+    if (remember) {
+      try { window.localStorage.setItem("cs.repName", ST.rep); } catch (e) {}
+    }
+  }
+
+  /* Restore a name typed on this machine before anything else touches it. */
+  try {
+    var savedRep = window.localStorage.getItem("cs.repName");
+    if (savedRep) setRep(savedRep, false);
+  } catch (e) {}
+
+  /* From the account, when the person has not chosen one. Google profiles
+     carry a display name; failing that, the local part of the address, which
+     is at least a human-readable handle rather than a uid. */
+  function seedRepFromAccount(user) {
+    if (ST.rep || !user) return;
+    var n = user.displayName && String(user.displayName).trim();
+    if (!n && user.email) {
+      n = String(user.email).split("@")[0]
+            .replace(/[._-]+/g, " ")
+            .replace(/\b[a-z]/g, function (c) { return c.toUpperCase(); });
+    }
+    if (n) setRep(n, true);
+  }
+
+  document.getElementById("repChip").onclick = function () {
+    var n = window.prompt(
+      "The name that appears on your claims, so a colleague knows who to " +
+      "call. Anything you like \u2014 it is a label, not a login.", ST.rep || "");
+    if (n == null) return;
+    setRep(n, true);
   };
 
   /* -------------------------------------------------------------- export */
@@ -4689,6 +4795,13 @@
       }
 
       function attachNow(u2, note) {
+        /* The ledger stamps every claim with this, and the rules pin it.
+           Set BEFORE attach so a claim made in the first second still
+           carries an identity. */
+        if (L.setIdentity) L.setIdentity(u2.uid, u2.email || "");
+        /* Fill the claim name from the account so nobody has to type one
+           before their first hold. Anything typed afterwards wins. */
+        seedRepFromAccount(u2);
         L.attach(db, ORG, function (err) {
           if (err) {
             /* The org resolved correctly from the email domain, which is

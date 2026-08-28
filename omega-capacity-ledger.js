@@ -406,12 +406,31 @@
      per claim, merged, never a whole-collection write. A floor of reps
      posting the full ledger would mean last-writer-wins and silently
      vanished holds. */
+  /* WHO MADE THE CLAIM, as identity rather than as a label.
+
+     `rep` is a DISPLAY NAME — whatever the person typed into "Set your name".
+     It is what a colleague reads on a card, and it is not proof of anything:
+     two people can type the same thing, and one can type another's.
+
+     So the record also carries the signed-in uid and email, stamped here
+     rather than passed in, because a value the caller supplies is a value the
+     caller can forge. The rules pin THESE, and leave `rep` free text — an
+     earlier version of the rules compared `rep` against the token email and
+     refused every claim, because a name is not an address. */
+  var ME = { uid: "", email: "" };
+  L.setIdentity = function (uid, email) {
+    ME.uid = uid ? String(uid) : "";
+    ME.email = email ? String(email).toLowerCase() : "";
+  };
+
   function push(rec, cb) {
     cb = cb || function () {};
     if (!DB || !ORG) { cb(null); return; }   /* local-only mode is valid */
     var doc = {}, k;
     for (k in rec) doc[k] = rec[k];
     doc.orgId = ORG;
+    if (ME.uid) doc.uid = ME.uid;
+    if (ME.email) doc.repEmail = ME.email;
     try {
       DB.collection("capacityAllocations").doc(ORG + "__" + rec.id)
         .set(doc, { merge: true })

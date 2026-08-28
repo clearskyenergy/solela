@@ -685,7 +685,7 @@
      Shown in Settings and stamped into the diagnostics log. Several rounds of
      debugging have been spent on the question "is the deployed file the one
      we just changed", and a screenshot cannot answer it. Now it can. */
-  var CS_BUILD = "2026-08-28 17:30 UTC";
+  var CS_BUILD = "2026-08-28 18:28 UTC";
 
   function savedTileKey() {
     try { return window.localStorage.getItem("cs.tileKey") || ""; }
@@ -1251,7 +1251,20 @@
 
        Anything reconstructed this way is marked so the card can say where it
        came from rather than implying the ledger confirmed it. */
-    if (!r.circ.known && r.nameplate != null) {
+    /* THE RECORD IS THE FALLBACK, but only when it names a circuit.
+
+       An earlier version tested `nameplate != null` alone. That let a record
+       with capacity but NO feederId produce a complete-looking circuit
+       state — headroom, queue, a suggested hold size — attached to a circuit
+       nobody could name. The panel then said "No circuit is attributed to
+       this site" and "100 kW is already held on this circuit" six lines
+       apart, and the Hold button failed with "a reservation needs a circuit
+       and a site" only after the rep had typed a note.
+
+       Capacity without an identity is not a circuit. It cannot be claimed,
+       cannot be compared against a colleague's hold, and cannot be quoted to
+       ComEd. So it stays unknown, and the panel says why. */
+    if (!r.circ.known && r.nameplate != null && r.feederId) {
       var np = +r.nameplate, q = +(r.queue || 0);
       var after = Math.max(0, np - q);
       r.circ = {
@@ -2084,6 +2097,7 @@
       queueRefreshed: (v.rows && v.rows[0]) ? v.rows[0].refreshed : null,
       geoSrc: v.geoSrc, geoInterp: v.geoInterp, geoStreet: v.geoStreet,
       approx: !!v.approxPin,
+      approxKind: v.approxKind || "",
       addressResolved: v.addressResolved,
       savedAt: new Date().toISOString(),
       src: "lookup"
@@ -4051,6 +4065,62 @@
     /* -- claim form ----------------------------------------------------- */
     var own = r.mine.length ? r.mine[0] : null;
     h.push('<div class="sec"><h4>' + (own ? 'Your claim on this site' : 'Claim capacity here') + '</h4>');
+
+    /* NO CIRCUIT, NO FORM.
+
+       A hold is a claim against a named circuit; without one there is nothing
+       to hold it on, nothing for a colleague's hold to collide with, and
+       nothing to quote to ComEd. Offering the form anyway meant a rep typed a
+       size and a note and got "a reservation needs a circuit and a site" only
+       on submit. Say it before the typing, not after. */
+    /* AN APPROXIMATE PIN IS NOT A SITE.
+
+       1700 W Roosevelt Rd resolved to a point 1,095 m from the building —
+       far enough to be a different block and quite possibly a different
+       feeder. The panel said so in red and then offered a 3,480 kW hold on
+       the circuit under that point anyway.
+
+       A hold taken there removes capacity from a circuit the customer may
+       not be on, and leaves the circuit they ARE on looking free. Both
+       halves of that are wrong, and the second is the dangerous one: the
+       next rep sees room that has already been promised.
+
+       So the form is withheld until the pin is a real position. Everything
+       else on the panel stays — the reading is still worth seeing, it just
+       is not worth claiming. */
+    if (r.approx) {
+      h.push('<div class="warn">' +
+        '<b>This pin is not the building, so capacity cannot be held here.</b> ' +
+        (r.approxKind === "street only"
+           ? "The street matched but the house number did not, so this point " +
+             "could be anywhere along it."
+         : r.approxKind === "city and ZIP"
+           ? "Only the city and ZIP matched."
+           : "Only the ZIP matched, so this is the centre of a postcode.") +
+        ' The circuit shown above is for THIS point, not necessarily for the ' +
+        'address you typed \u2014 a hold placed on it would take capacity off ' +
+        'a circuit the customer may not even be on, and leave the one they ' +
+        'are on looking free. Drop a pin on the actual building, or confirm ' +
+        'the serving feeder with ComEd, then claim.' +
+        '</div></div>');
+      return h.join("");
+    }
+
+    if (!r.feederId) {
+      h.push('<div class="warn">' +
+        '<b>No circuit is attributed to this site yet, so capacity cannot be ' +
+        'held.</b> A hold has to name the wire it is against. Zoom to 14+ so ' +
+        'ComEd\u2019s circuits resolve, search the address to ask ComEd about ' +
+        'this exact point, or confirm the serving feeder with the utility.' +
+        (r.nameplate != null
+          ? ' Capacity was read for this point but the circuit came back ' +
+            'unnamed, so it cannot be claimed or quoted \u2014 see ComEd\u2019s ' +
+            'published record below for the identifier they use.'
+          : '') +
+        '</div></div>');
+      return h.join("");
+    }
+
     /* Say it HERE, where the hold is actually made. A rep about to take
        340 kW off a circuit needs to know whether anyone else will see it.
        A grey chip in the far corner of the header is not where that lands. */
@@ -4122,7 +4192,12 @@
          ZIP-centroid position can be a mile from the building and put the
          site on the wrong feeder entirely. */
       g("Position", r.approx
-          ? '<b style="color:var(--red)">ZIP centroid \u2014 not the building</b>'
+          ? '<b style="color:var(--red)">' +
+              (r.approxKind === "street only"
+                 ? "Street matched, not the address \u2014 could be anywhere along it"
+               : r.approxKind === "city and ZIP"
+                 ? "Only the city and ZIP matched \u2014 not the building"
+                 : "ZIP centroid \u2014 not the building") + '</b>'
           : r.geoStreet
               ? '<b style="color:var(--red)">Street-level only</b> \u2014 the ' +
                 'house number did not resolve, so this is a point on the road ' +
@@ -4503,7 +4578,40 @@
     var txt = raw.trim();
     var parts = txt.split(",").map(function (s) { return s.trim(); }).filter(Boolean);
     var attempts = [{ q: txt, kind: "as typed" }];
+
+    /* EXHAUST THE EXACT FORMS BEFORE DEGRADING.
+
+       1700 W Roosevelt Rd, Broadview failed as typed and matched the STREET
+       instead, landing 1,095 m away — a different block and possibly a
+       different feeder. One exact attempt is not enough, because the two
+       commonest reasons an exact match fails are cosmetic:
+
+         a ZIP that disagrees with the geocoder's own boundary data, and
+         a directional prefix the index does not carry ("W Roosevelt Rd"
+         versus "Roosevelt Rd").
+
+       Both of these rungs KEEP THE HOUSE NUMBER, so a hit is a real address
+       and is not flagged approximate. Only after all of them miss does the
+       ladder fall back to something that is not the building. */
     if (parts.length > 1) {
+      /* Same address, no ZIP. */
+      var noZip = txt.replace(/\s*\b\d{5}(-\d{4})?\b\s*$/, "").replace(/,\s*$/, "");
+      if (noZip !== txt) attempts.push({ q: noZip, kind: "without the ZIP" });
+
+      /* Same address, directional prefix dropped: "1700 W Roosevelt Rd"
+         becomes "1700 Roosevelt Rd". Still the house number, still exact. */
+      var noDir = parts[0].replace(/^(\d+)\s+(N|S|E|W|NE|NW|SE|SW)\s+/i, "$1 ");
+      if (noDir !== parts[0]) {
+        attempts.push({ q: [noDir].concat(parts.slice(1)).join(", "),
+                        kind: "without the direction" });
+        if (noZip !== txt) {
+          var nd = noZip.split(",").map(function (s) { return s.trim(); });
+          nd[0] = noDir;
+          attempts.push({ q: nd.join(", "), kind: "no direction, no ZIP" });
+        }
+      }
+
+      /* Everything below here is NOT the building. */
       var p0 = parts[0].replace(/^\s*\d+\s+/, "");
       if (p0 !== parts[0])
         attempts.push({ q: [p0].concat(parts.slice(1)).join(", "), kind: "street only", approx: true });
@@ -4546,6 +4654,13 @@
       }
       viabilityAt(lat, lon, label, function (v) {
         v.geoSrc = hit.src; v.approxPin = !!attempt.approx;
+        /* WHICH fallback fired, not a guess at it. Three rungs are flagged
+           approximate — street only, city and ZIP, and the ZIP centroid —
+           and the Position line used to name the last one regardless. A rep
+           told "ZIP centroid" when the street actually matched is being told
+           the pin is worse than it is; told "ZIP centroid" when it IS one is
+           being told the truth by accident. */
+        v.approxKind = attempt.approx ? attempt.kind : "";
         v.geoInterp = !!hit.interpolated;
         v.geoStreet = !!hit.street;
         v.matched = hit.matched || "";

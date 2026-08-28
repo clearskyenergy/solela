@@ -672,6 +672,30 @@
         break;
       }
     }
+    /* LAST RESORT: scan for anything feeder-shaped.
+
+       The named list above is a guess at ComEd's schema, and a guess that
+       misses leaves a circuit with capacity and no identity — which used to
+       produce a panel claiming both "no circuit is attributed here" and "100
+       kW is already held on this circuit". A circuit that cannot be named
+       cannot be claimed or quoted, so it is worth one more pass.
+
+       Restricted to short scalar values on a feeder-ish key, so this cannot
+       latch onto a description, a date or a geometry blob. */
+    if (!feeder) {
+      var kk;
+      for (kk in k) {
+        if (!k.hasOwnProperty(kk)) continue;
+        if (!/(FEED|FDR|CKT|CIRCUIT)/.test(kk)) continue;
+        if (/DATE|TIME|DESC|NOTE|SHAPE|GEOM|_Q$|QUEUE|KW|CAP/.test(kk)) continue;
+        var v = k[kk];
+        if (v == null) continue;
+        v = String(v).trim();
+        if (!v || v.length > 30 || /^\d+(\.\d+)?$/.test(v)) continue;
+        feeder = v;
+        break;
+      }
+    }
     var q = n(k.FEEDER_Q);
     return {
       a: attrs,            /* ComEd's record, verbatim, for display */

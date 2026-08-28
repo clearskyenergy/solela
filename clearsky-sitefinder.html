@@ -544,9 +544,14 @@
 
   var ST = {
     rows: [],          /* normalized properties, enriched */
-    /* Addresses a rep has checked and kept. Separate from `rows` so that a
-       pan, a re-search or an empty viewport never discards them. */
+    /* Addresses a rep has STARRED. Separate from `rows` so a pan, a
+       re-search or an empty viewport never discards them, and persisted. */
     saved: [],
+    /* The one address currently being looked at. Replaced by the next
+       lookup and never persisted — checking twenty addresses in a morning
+       should not leave twenty cards in the panel. Starring is what promotes
+       it into `saved`. */
+    current: null,
     byId: {},
     view: "split",
     sel: null,
@@ -593,7 +598,7 @@
      Shown in Settings and stamped into the diagnostics log. Several rounds of
      debugging have been spent on the question "is the deployed file the one
      we just changed", and a screenshot cannot answer it. Now it can. */
-  var CS_BUILD = "2026-08-28 00:34 UTC";
+  var CS_BUILD = "2026-08-28 00:36 UTC";
 
   function savedTileKey() {
     try { return window.localStorage.getItem("cs.tileKey") || ""; }
@@ -1628,7 +1633,17 @@
   function loadSaved() {
     try {
       var raw = window.localStorage.getItem("cs.savedSites");
-      return raw ? JSON.parse(raw) : [];
+      var list = raw ? JSON.parse(raw) : [];
+      /* An earlier build auto-saved EVERY lookup, so existing installs have a
+         search history sitting in storage that the rep never chose to keep.
+         Anything stored before starring existed is dropped once, and only
+         once — deliberately starred sites carry a flag and survive. */
+      if (!window.localStorage.getItem("cs.savedMigrated")) {
+        list = list.filter(function (s) { return s && s.starred === true; });
+        window.localStorage.setItem("cs.savedMigrated", "1");
+        window.localStorage.setItem("cs.savedSites", JSON.stringify(list));
+      }
+      return list;
     } catch (e) { return []; }
   }
   function persistSaved() {
@@ -1679,15 +1694,34 @@
     return rec;
   }
 
-  function saveSite(v, lat, lon) {
+  /* A lookup REPLACES the current site; it does not accumulate.
+
+     Auto-saving every lookup turned the panel into a search history — twenty
+     addresses checked meant twenty cards, none of which the rep had chosen
+     to keep. Now there is exactly one current site at a time, and starring
+     is the deliberate act that keeps it. */
+  function setCurrent(v, lat, lon) {
     var rec = recordFromLookup(v, lat, lon);
+    /* If it is already starred, keep the starred copy authoritative and
+       refresh it in place rather than showing the same site twice. */
     var i;
     for (i = 0; i < ST.saved.length; i++) {
-      if (ST.saved[i].id === rec.id) { ST.saved[i] = rec; persistSaved(); return rec; }
+      if (ST.saved[i].id === rec.id) {
+        ST.saved[i] = rec; persistSaved(); ST.current = null; return rec;
+      }
     }
+    ST.current = rec;
+    return rec;
+  }
+
+  /* Star the current site, or any card, into the kept list. */
+  function starSite(rec) {
+    if (!rec || isSaved(rec.id)) return;
+    rec.starred = true;          /* marks a deliberate keep, not a lookup */
+    rec.starredAt = new Date().toISOString();
     ST.saved.unshift(rec);
     persistSaved();
-    return rec;
+    if (ST.current && ST.current.id === rec.id) ST.current = null;
   }
 
   function unsaveSite(id) {
@@ -1724,6 +1758,16 @@
         if (window.console) console.error("clearsky: enrich failed", sr, err);
       }
     }
+    /* The one site currently being looked at, ahead of the starred list.
+       Not persisted, replaced by the next lookup. */
+    var current = null;
+    if (ST.current && !isSaved(ST.current.id)) {
+      try { current = enrich(ST.current); }
+      catch (err) {
+        broke.push((ST.current.addr || "the current site") + " \u2014 " +
+                   (err && err.message ? err.message : "unknown error"));
+      }
+    }
 
     /* GHOSTS. When a viewport search returns nothing the old rows were kept
        — "nothing was returned, so the list below is unchanged" — which was
@@ -1741,7 +1785,9 @@
     /* The Starred view is the same cards, restricted to what the rep kept,
        and NOT restricted by the viewport — the whole point of starring a
        site is being able to come back to it from anywhere on the map. */
-    rows = (ST.view === "saved") ? saved : saved.concat(rows);
+    rows = (ST.view === "saved")
+      ? saved
+      : (current ? [current] : []).concat(saved, rows);
     /* Index everything on screen so the star can find a record by id
        whether it came from the viewport or the saved list. */
     for (si = 0; si < rows.length; si++) ST.byId[rows[si].id] = rows[si];
@@ -1749,7 +1795,7 @@
     var sn = document.getElementById("savedN");
     if (sn) sn.textContent = ST.saved.length ? "(" + ST.saved.length + ")" : "";
 
-    if (!ST.rows.length && !saved.length) {
+    if (!ST.rows.length && !saved.length && !current) {
       head("Pan the map, then search", "Every result is scored on what the circuit will still accept, not on what the building could theoretically host.");
       wrap.innerHTML = '<div class="empty"><h3>No area searched yet</h3>' +
         '<p>Move the map over a corridor you want to work and press <b>Search this area</b>. ' +
@@ -2081,7 +2127,9 @@
     return '<article class="card' + ((r.circ.sellable || 0) <= 0 ? ' blocked' : '') +
       '" tabindex="0" role="button" data-id="' + esc(r.id) + '">' +
       '<div class="ph">' + photo(r) +
-        '<span class="badge">' + esc(r.type) + '</span>' +
+        '<span class="badge">' +
+          (r.src === "lookup" && !isSaved(r.id) ? "Looking at now" : esc(r.type)) +
+          '</span>' +
         /* The star sits on the card itself so a site can be kept without
            opening it — a rep scanning a corridor should be able to flag
            three sites and come back to them, not open three panels. */
@@ -2395,7 +2443,7 @@
            appears in their list is friction for no reason, and it is why the
            left panel kept showing "no matches" next to a panel full of real
            answers. Save/remove then controls whether it PERSISTS. */
-        var rec = saveSite(v, lat, lon);
+        var rec = setCurrent(v, lat, lon);
         showViability(v, lat, lon);
         render();
         /* Scroll the new card into view so it is obvious something happened. */
@@ -3165,7 +3213,9 @@
     var sb = document.getElementById("dSave");
     if (sb) sb.onclick = function () {
       var id = "site:" + lat.toFixed(5) + "," + lon.toFixed(5);
-      if (isSaved(id)) unsaveSite(id); else saveSite(v, lat, lon);
+      if (isSaved(id)) unsaveSite(id);
+      else starSite(ST.current && ST.current.id === id
+                      ? ST.current : recordFromLookup(v, lat, lon));
       /* Re-render both: the button label and the list have to agree, and the
          saved site should appear in the list immediately rather than after
          the next pan. */
@@ -3419,8 +3469,7 @@
        and the list agree immediately. */
     var sr = document.getElementById("dSaveRow");
     if (sr) sr.onclick = function () {
-      if (isSaved(r.id)) unsaveSite(r.id);
-      else { ST.saved.unshift(r); persistSaved(); }
+      if (isSaved(r.id)) unsaveSite(r.id); else starSite(r);
       openDrawer(r);
       render();
     };
@@ -3584,10 +3633,7 @@
       e.stopPropagation();
       var sid = s.getAttribute("data-star");
       if (isSaved(sid)) unsaveSite(sid);
-      else {
-        var rec = ST.byId[sid];
-        if (rec) { ST.saved.unshift(rec); persistSaved(); }
-      }
+      else starSite(ST.byId[sid]);
       render();
       return;
     }
@@ -3744,7 +3790,7 @@
           v.parcel = p || null;
           /* Same as a dropped pin: the searched address becomes a card in
              the list straight away. */
-          var rec = saveSite(v, lat, lon);
+          var rec = setCurrent(v, lat, lon);
           showViability(v, lat, lon);
           render();
           var el = document.querySelector('.card[data-id="' + cssEsc(rec.id) + '"]');

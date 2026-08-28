@@ -614,7 +614,7 @@
      Shown in Settings and stamped into the diagnostics log. Several rounds of
      debugging have been spent on the question "is the deployed file the one
      we just changed", and a screenshot cannot answer it. Now it can. */
-  var CS_BUILD = "2026-08-28 00:43 UTC";
+  var CS_BUILD = "2026-08-28 00:45 UTC";
 
   function savedTileKey() {
     try { return window.localStorage.getItem("cs.tileKey") || ""; }
@@ -1802,7 +1802,35 @@
     return false;
   }
 
+  /* render() must NEVER leave the panel stale.
+
+     Twice now a throw partway through has left the previous cards on screen
+     while the header showed the new site — from the outside, a search that
+     silently did nothing. Per-record guards covered enrichment and card
+     building, but everything around them (filtering, markers, the header)
+     was still unprotected.
+
+     So the whole thing is wrapped. A failure now produces a visible message
+     naming the error instead of a panel that looks fine and is wrong. */
   function render() {
+    try {
+      renderInner();
+    } catch (err) {
+      if (window.console) console.error("clearsky: render failed", err);
+      var w = document.getElementById("cards");
+      head("Could not draw the list",
+           "Something went wrong building the results. The message below names it.");
+      if (w) {
+        w.innerHTML = '<div class="empty" style="text-align:left;border:1px solid var(--red)">' +
+          '<h3 style="color:var(--red)">The list could not be drawn</h3>' +
+          '<p><small>' + esc(err && err.message ? err.message : String(err)) +
+          '</small></p><p>Send this message on. The map and the site panel are ' +
+          'unaffected \u2014 the circuit reading above is still good.</p></div>';
+      }
+    }
+  }
+
+  function renderInner() {
     var rows = filtered();
     var wrap = document.getElementById("cards");
 
@@ -2516,8 +2544,8 @@
            left panel kept showing "no matches" next to a panel full of real
            answers. Save/remove then controls whether it PERSISTS. */
         var rec = setCurrent(v, lat, lon);
-        showViability(v, lat, lon);
         render();
+        showViability(v, lat, lon);
         /* Scroll the new card into view so it is obvious something happened. */
         var el = document.querySelector('.card[data-id="' + cssEsc(rec.id) + '"]');
         if (el && el.scrollIntoView) el.scrollIntoView({ block: "nearest" });
@@ -3870,11 +3898,27 @@
           /* Same as a dropped pin: the searched address becomes a card in
              the list straight away. */
           var rec = setCurrent(v, lat, lon);
-          showViability(v, lat, lon);
+          /* Draw the list FIRST, then the panel. render() writes the results
+             header, so running it after showViability wiped the circuit
+             headline the rep just asked for. The panel's headline is the
+             more useful of the two after a search, so it goes last. */
           render();
+          showViability(v, lat, lon);
           var el = document.querySelector('.card[data-id="' + cssEsc(rec.id) + '"]');
           if (el && el.scrollIntoView) el.scrollIntoView({ block: "nearest" });
-          if (hasSource()) run(true);
+          /* The viewport search runs too, but it must not steal the header
+             from the address the rep just asked about. */
+          if (hasSource()) {
+            var keepN = document.getElementById("resN").textContent;
+            var keepS = document.getElementById("resS").textContent;
+            run(true);
+            setTimeout(function () {
+              if (ST.current && ST.current.id === rec.id) {
+                document.getElementById("resN").textContent = keepN;
+                document.getElementById("resS").textContent = keepS;
+              }
+            }, 40);
+          }
         });
       });
       LAY.attribIn(bounds(), function () {});

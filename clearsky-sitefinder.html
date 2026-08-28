@@ -151,6 +151,8 @@
   .card .kw small{font-size:12px;font-weight:600;color:var(--muted);letter-spacing:0}
   .card .kwsub{font-size:11px;color:var(--muted);margin-top:2px}
   .card .ad{font-size:14px;font-weight:600;margin-top:7px;line-height:1.25}
+  .card .ad a{color:inherit;text-decoration:none;border-bottom:1px dotted var(--dim)}
+  .card .ad a:hover{color:var(--accent);border-bottom-color:var(--accent)}
   .card .mt{font-size:12px;color:var(--muted);margin-top:3px}
   .card .own{font-size:11px;color:var(--dim);margin-top:4px;overflow:hidden;text-overflow:ellipsis;
     white-space:nowrap}
@@ -584,6 +586,15 @@
   <div class="d-b" id="dBody"></div>
 </div>
 
+<!-- Firebase, then the shared tenant config. Both are loaded exactly as
+     comed-capacity.html loads them, so the two tools authenticate against the
+     same project and read the same ledger. Without these the Site Finder can
+     never leave LOCAL ONLY: connect() tests window.firebase on its first line
+     and falls back silently, which is why the ledger has never synced. -->
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
+<script src="/config.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
 <script src="omega-capacity-ledger.js"></script>
 <script src="omega-comed-layers.js"></script>
@@ -661,7 +672,7 @@
      Shown in Settings and stamped into the diagnostics log. Several rounds of
      debugging have been spent on the question "is the deployed file the one
      we just changed", and a screenshot cannot answer it. Now it can. */
-  var CS_BUILD = "2026-08-28 12:32 UTC";
+  var CS_BUILD = "2026-08-28 15:51 UTC";
 
   function savedTileKey() {
     try { return window.localStorage.getItem("cs.tileKey") || ""; }
@@ -2773,7 +2784,16 @@
       '<div class="bd">' +
         '<div class="kw">' + kwTxt + ' <small>kW deliverable</small></div>' +
         '<div class="kwsub">' + sub + '</div>' +
-        '<div class="ad">' + esc(r.addr) + '</div>' +
+        /* The address is the link. A rep reads the address first and wants
+           to see the roof; making them open the card and find a button is a
+           step that does not need to exist. */
+        '<div class="ad">' + (function () {
+          var u = mapsUrls(r);
+          return u
+            ? '<a href="' + u.sat + '" target="_blank" rel="noopener" ' +
+              'data-noselect="1" title="Satellite view">' + esc(r.addr) + '</a>'
+            : esc(r.addr);
+        })() + '</div>' +
         /* Every line below is switchable in Settings. Display only — nothing
            here changes a filter, a score or what was loaded. */
         (shows("size") || shows("type")
@@ -3822,6 +3842,8 @@
         '<p class="note">' + esc(matchLine(v)) + '</p></div>' +
       reportCardHtml(v, lat, lon) +
       saveBlockHtml(v, lat, lon) +
+      mapsLinksHtml({ lat: lat, lon: lon, approx: v.approxPin,
+                      geoStreet: v.geoStreet, geoInterp: v.geoInterp }) +
       scoreBlockHtml(v, lat, lon) +
       comedRecordHtml(v.rows && v.rows[0] ? v.rows[0].a : null, v.covering) +
       parcelBlockHtml(v.parcel) +
@@ -3859,6 +3881,46 @@
     ST.sel = null;
   }
 
+  /* Aerial and Street View, from the site's own coordinates.
+
+     Built from lat/lon rather than the address string, because the address
+     is what a geocoder was given and the coordinates are what it decided —
+     and a rep checking the roof needs to see the point the tool actually
+     scored, not a second, possibly different, interpretation of the text.
+
+     Satellite answers "is there a roof, a yard, a transformer pad". Street
+     View answers "is there a service drop, and what does the frontage look
+     like". Both are one click from the card. */
+  function mapsUrls(r) {
+    if (r.lat == null || r.lon == null) return null;
+    var ll = r.lat.toFixed(6) + "," + r.lon.toFixed(6);
+    return {
+      sat: "https://www.google.com/maps/@?api=1&map_action=map&center=" + ll +
+           "&zoom=19&basemap=satellite",
+      pano: "https://www.google.com/maps/@?api=1&map_action=pano&viewpoint=" + ll,
+      pin: "https://www.google.com/maps/search/?api=1&query=" + ll
+    };
+  }
+
+  function mapsLinksHtml(r) {
+    var u = mapsUrls(r);
+    if (!u) return "";
+    return '<div class="sec"><h4>Look at it</h4>' +
+      '<p class="note">' +
+      '<a href="' + u.sat + '" target="_blank" rel="noopener"><b>Satellite</b></a>' +
+      ' &nbsp;\u00b7&nbsp; ' +
+      '<a href="' + u.pano + '" target="_blank" rel="noopener"><b>Street View</b></a>' +
+      ' &nbsp;\u00b7&nbsp; ' +
+      '<a href="' + u.pin + '" target="_blank" rel="noopener">Open in Google Maps</a>' +
+      '<br><small>Opens at ' + r.lat.toFixed(5) + ", " + r.lon.toFixed(5) +
+      ' \u2014 the exact point this card was scored from' +
+      (r.approx ? ", which is a ZIP centroid and may not be the building"
+       : r.geoStreet ? ", which resolved to street level only"
+       : r.geoInterp ? ", interpolated along the street" : "") +
+      '. Street View may show a nearby frontage if the camera never passed ' +
+      'the building.</small></p></div>';
+  }
+
   function drawerHtml(r) {
     var st = r.circ, sz = r.sz, h = [];
     var live = liveClaims(r);
@@ -3866,6 +3928,7 @@
     /* The report card leads, then the save control, then the detail. A rep
        opening a card wants the verdict first and the paperwork after. */
     h.push(reportCardForRecord(r));
+    h.push(mapsLinksHtml(r));
     h.push(saveRowHtml(r));
 
     /* -- headline ------------------------------------------------------- */
@@ -3939,6 +4002,15 @@
     /* -- claim form ----------------------------------------------------- */
     var own = r.mine.length ? r.mine[0] : null;
     h.push('<div class="sec"><h4>' + (own ? 'Your claim on this site' : 'Claim capacity here') + '</h4>');
+    /* Say it HERE, where the hold is actually made. A rep about to take
+       340 kW off a circuit needs to know whether anyone else will see it.
+       A grey chip in the far corner of the header is not where that lands. */
+    if (SYNC_NOTE) {
+      h.push('<div class="warn"><b>This claim will not be shared.</b> ' +
+        esc(SYNC_NOTE) + ' Until that is fixed, another rep can hold the same ' +
+        'capacity on ' + esc(r.feederId || "this circuit") +
+        ' and neither of you will be warned.</div>');
+    }
     if (own) {
       var os = L.statusOf(own.status), od = L.daysLeft(own);
       h.push('<div class="note' + (L.isExpired(own) ? ' bad' : '') + '">' +
@@ -4258,6 +4330,12 @@
   document.getElementById("cards").addEventListener("click", function (e) {
     /* The star must not also open the card — a rep flagging three sites in a
        row should not have three panels open behind them. */
+    /* The address is a link to satellite view. Clicking it must open Google,
+       not the card behind it. */
+    if (e.target.closest && e.target.closest("[data-noselect]")) {
+      e.stopPropagation();
+      return;
+    }
     var hb = e.target.closest ? e.target.closest("[data-hide]") : null;
     if (hb) {
       e.stopPropagation();
@@ -4518,27 +4596,98 @@
      this tab — which for a tool whose entire job is stopping two reps from
      colliding, is worth saying out loud rather than failing quietly. */
   function connect() {
-    if (!window.firebase || !window.firebase.apps) { localMode(); return; }
+    /* Every fallback path NAMES ITSELF. This used to call localMode() from
+       five places with no reason attached, so a tool used by reps across
+       several states sat in LOCAL ONLY — each of them seeing only their own
+       holds, any two of them able to sell the same circuit — and the only
+       symptom was a small grey chip. A silent fallback on the one guarantee
+       this tool exists to provide is not an acceptable failure mode. */
+    if (typeof firebase === "undefined" || !firebase.apps) {
+      localMode("The Firebase SDK did not load. Check the three firebasejs " +
+                "script tags at the top of this page and that the network " +
+                "allows gstatic.com.");
+      return;
+    }
+    /* CLEARSKY_CONFIG is what comed-capacity.html reads from /config.js.
+       This page looked for FIREBASE_CONFIG, which nothing sets — so even
+       with the SDK present it would still have gone local. */
+    var cfg = (window.CLEARSKY_CONFIG && window.CLEARSKY_CONFIG.firebase) ||
+              window.FIREBASE_CONFIG || null;
+    if (!cfg) {
+      localMode("No Firebase config. /config.js should define " +
+                "window.CLEARSKY_CONFIG.firebase, the same object the ComEd " +
+                "Capacity Finder uses.");
+      return;
+    }
     try {
-      if (!firebase.apps.length && window.FIREBASE_CONFIG) firebase.initializeApp(window.FIREBASE_CONFIG);
-      if (!firebase.apps.length) { localMode(); return; }
-      var db = firebase.firestore();
-      firebase.auth().onAuthStateChanged(function (u) {
-        if (!u) { localMode(); return; }
-        L.attach(db, ORG, function (err) {
-          if (err) { localMode(); return; }
-          document.getElementById("srcTag").textContent = "Shared ledger";
-          document.getElementById("srcTag").style.cssText =
-            "color:#2ea043;background:#eef8f0;border-color:#c6e6cd";
-          refreshAll(ST.sel);
-        });
+      if (!firebase.apps.length) firebase.initializeApp(cfg);
+    } catch (e) {
+      if (!/already exists/i.test(e.message || "")) {
+        localMode("Firebase would not initialise: " + (e.message || e));
+        return;
+      }
+    }
+    if (!firebase.apps.length) {
+      localMode("Firebase initialised without creating an app. The config in " +
+                "/config.js is probably incomplete.");
+      return;
+    }
+
+    var db;
+    try { db = firebase.firestore(); }
+    catch (e) { localMode("Firestore unavailable: " + (e.message || e)); return; }
+
+    firebase.auth().onAuthStateChanged(function (u) {
+      if (!u) {
+        localMode("Signed out. The shared ledger needs a signed-in user \u2014 " +
+                  "claims made now stay on this machine and nobody else can " +
+                  "see them.", true);
+        return;
+      }
+      L.attach(db, ORG, function (err) {
+        if (err) {
+          /* A rules rejection is the likeliest cause and the most dangerous,
+             because everything still LOOKS fine. */
+          localMode("Connected and signed in, but the ledger would not attach: " +
+                    (err.message || err) + ". If that mentions permissions, the " +
+                    "Firestore rules for capacityAllocations are not deployed, " +
+                    "or this account's token carries no orgId.");
+          return;
+        }
+        var t = document.getElementById("srcTag");
+        t.textContent = "Shared ledger \u00b7 " + (u.email || u.uid).split("@")[0];
+        t.title = "Claims are visible to everyone in " + ORG +
+                  ". Signed in as " + (u.email || u.uid) + ".";
+        t.style.cssText = "color:#2ea043;background:#eef8f0;border-color:#c6e6cd";
+        SYNC_NOTE = "";
+        refreshAll(ST.sel);
       });
-    } catch (e) { localMode(); }
+    });
   }
-  function localMode() {
+
+  var SYNC_NOTE = "";
+
+  function localMode(why, signedOut) {
     var t = document.getElementById("srcTag");
-    t.textContent = isSample() ? "Sample data \u00b7 local only" : "Local only";
-    t.title = "Claims are not shared with the team. Sign in to use the shared ledger.";
+    SYNC_NOTE = why || "";
+    t.textContent = isSample() ? "Sample data \u00b7 local only" : "LOCAL ONLY";
+    t.title = (why || "Claims are not shared with the team.") +
+              "  Click for detail.";
+    /* Red, not grey. On a tool used by reps in several states, this state
+       means the oversell guard is not working and it should look wrong. */
+    t.style.cssText = "color:#b4341f;background:#fdecea;border-color:#f5c2bb;cursor:pointer";
+    t.onclick = function () {
+      window.alert(
+        "LOCAL ONLY \u2014 claims are not shared\n\n" +
+        (why || "") + "\n\n" +
+        "While this says LOCAL ONLY, every rep sees only their own holds. " +
+        "Two people can each sell the same circuit and neither will be warned. " +
+        "The capacity ledger is the one part of this tool that has to be " +
+        "shared to work at all." +
+        (signedOut ? "\n\nSign in on the ComEd Capacity Finder in another tab, " +
+                     "then reload this page \u2014 both tools use the same " +
+                     "Firebase project." : ""));
+    };
   }
 
   L.onChange(function () { /* stream repaints handled by refreshAll */ });

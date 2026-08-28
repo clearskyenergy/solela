@@ -353,17 +353,15 @@
     }
 
     AQ.busy = true; AQ.queue = [cb];
-    /* Web Mercator in, degrees out — the projection ComEd's own viewer
-       sends. Geometry comes back in 4326 because the point-in-polygon tests
-       in this file work in degrees. */
-    var sw = toMerc(bbox.s, bbox.w), ne = toMerc(bbox.n, bbox.e);
+    /* Degrees, matching the Capacity Finder. Web Mercator was a hypothesis
+       that did not help and is not what the working tool sends. */
     var env = JSON.stringify({
-      xmin: sw.x, ymin: sw.y, xmax: ne.x, ymax: ne.y,
-      spatialReference: { wkid: 102100 }
+      xmin: bbox.w, ymin: bbox.s, xmax: bbox.e, ymax: bbox.n,
+      spatialReference: { wkid: 4326 }
     });
     var url = base() + "/" + M.ATTRIB_LAYER + "/query?f=json&where=1%3D1" +
       "&geometry=" + encodeURIComponent(env) +
-      "&geometryType=esriGeometryEnvelope&inSR=102100&outSR=4326" +
+      "&geometryType=esriGeometryEnvelope&inSR=4326&outSR=4326" +
       "&spatialRel=esriSpatialRelIntersects&outFields=*&returnGeometry=true" +
       /* Ten times finer than the drawn copy. The drawn one is simplified for
          speed; this one decides whether a parcel is on a circuit, and 22 m
@@ -732,43 +730,37 @@
     });
   };
 
-  /* Web Mercator, because that is what ComEd's own viewer sends.
-
-     Its tile requests carry inSR=102100 with the envelope in metres. This
-     tool has been sending inSR=4326 with degrees — which ArcGIS is supposed
-     to reproject, but "supposed to" is doing a lot of work on a service that
-     has already surprised us twice. The known-good request is in Web
-     Mercator, so the probe now matches it exactly rather than relying on a
-     reprojection nobody has verified.
-
-     outSR stays 4326 so anything that does come back with geometry is still
-     in the degrees the rest of this file works in. */
-  function toMerc(lat, lon) {
-    var x = lon * 20037508.34 / 180;
-    var y = Math.log(Math.tan((90 + lat) * Math.PI / 360)) / (Math.PI / 180);
-    return { x: x, y: y * 20037508.34 / 180 };
-  }
-
   function probeOrder(lat, lon, order, cb) {
-    /* ~61 m each way ON THE GROUND, matching the Capacity Finder's snap
-       radius. Web Mercator units are only metres at the equator — at
-       Chicago's latitude one Mercator unit is cos(41.8) = 0.745 real metres,
-       so an unscaled 61-unit box would be a 45 m box and could miss a circuit
-       the Capacity Finder catches. */
-    var c = toMerc(lat, lon);
-    var R = 61 / Math.cos(lat * Math.PI / 180);
+    /* THE CAPACITY FINDER'S REQUEST, BYTE FOR BYTE.
+
+       Its analyze() builds this envelope and its qUrl() builds this query
+       string, and that combination demonstrably returns five circuits at
+       41.81522, -87.62261 through this same Worker. Every variation I tried
+       on top of it — Web Mercator geometry, maxRecordCountFactor,
+       returnExceededLimitFeatures — was a hypothesis, and none of them
+       helped. So the extras are gone and the parameters are in the same
+       order with the same values.
+
+       If this still returns nothing where the Capacity Finder returns five,
+       the difference is no longer in the request and the next place to look
+       is the response handling. */
+    var dLat = 0.00055, dLng = 0.00055 / Math.cos(lat * Math.PI / 180);
     var env = JSON.stringify({
-      xmin: c.x - R, ymin: c.y - R, xmax: c.x + R, ymax: c.y + R,
-      spatialReference: { wkid: 102100 }
+      xmin: lon - dLng, ymin: lat - dLat,
+      xmax: lon + dLng, ymax: lat + dLat,
+      spatialReference: { wkid: 4326 }
     });
     var i = 0, errs = [], lastUrl = "", empties = [];
 
     (function tryNext() {
-      if (i >= order.length) {
+      if (i >= order.length || i >= 12) {
         var inTerritory = (lat > 40.6 && lat < 42.6 && lon > -89.5 && lon < -87.4);
         cb(null, { rows: [], layerId: null, addressResolved: false,
-                   grain: "", tried: order, errors: errs,
-                   serviceFailed: errs.length === order.length,
+                   grain: "", tried: order.slice(0, i), errors: errs,
+                   /* Every attempt errored — and there was at least one.
+                      Zero errors must never read as total failure, which is
+                      what `errs.length === i` did when both were 0. */
+                   serviceFailed: errs.length > 0 && errs.length === i,
                    emptyEverywhere: errs.length === 0,
                    suspicious: errs.length === 0 && inTerritory,
                    empties: empties,
@@ -776,16 +768,11 @@
         return;
       }
       var id = order[i++];
-      var url = base() + "/" + id + "/query?f=json&where=1%3D1" +
+      var url = base() + "/" + id + "/query?f=json&where=1%3D1&outFields=*" +
         "&geometry=" + encodeURIComponent(env) +
-        "&geometryType=esriGeometryEnvelope&inSR=102100&outSR=4326" +
-        "&spatialRel=esriSpatialRelIntersects" +
-        "&outFields=*&returnGeometry=false" +
-        /* Both sent by ComEd's viewer. The factor lifts the service's own
-           record cap; returnExceededLimitFeatures=false makes it SAY when it
-           truncated instead of quietly returning a partial set. */
-        "&maxRecordCountFactor=3&returnExceededLimitFeatures=false" +
-        "&resultRecordCount=25";
+        "&geometryType=esriGeometryEnvelope" +
+        "&inSR=4326&outSR=4326&spatialRel=esriSpatialRelIntersects" +
+        "&returnGeometry=false&resultRecordCount=25";
       lastUrl = url;
 
       getJSON(url, function (err, j) {

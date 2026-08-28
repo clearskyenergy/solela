@@ -537,6 +537,9 @@
 
   var ST = {
     rows: [],          /* normalized properties, enriched */
+    /* Addresses a rep has checked and kept. Separate from `rows` so that a
+       pan, a re-search or an empty viewport never discards them. */
+    saved: [],
     byId: {},
     view: "split",
     sel: null,
@@ -583,7 +586,7 @@
      Shown in Settings and stamped into the diagnostics log. Several rounds of
      debugging have been spent on the question "is the deployed file the one
      we just changed", and a screenshot cannot answer it. Now it can. */
-  var CS_BUILD = "2026-08-27 23:57 UTC";
+  var CS_BUILD = "2026-08-28 00:11 UTC";
 
   function savedTileKey() {
     try { return window.localStorage.getItem("cs.tileKey") || ""; }
@@ -1543,11 +1546,106 @@
     return out;
   }
 
+  /* ══════════════════════════════════════════════════════════════════════
+     SAVED SITES
+
+     A looked-up address used to exist only in the drawer: close it and the
+     work was gone. But an address a rep has checked IS a site — often the
+     only kind they have, since the harvested parcel list is thin and will
+     stay thin until a vendor feed lands.
+
+     So a lookup can be saved, and a saved site behaves like any other card:
+     it lists, it scores, it exports, and capacity can be claimed against its
+     circuit through the same ledger. Saved sites are kept separately from
+     harvested rows so a pan or a re-search never discards them, and they
+     persist across reloads because losing a morning of checked addresses to
+     a refresh is not acceptable.
+     ══════════════════════════════════════════════════════════════════════ */
+  function loadSaved() {
+    try {
+      var raw = window.localStorage.getItem("cs.savedSites");
+      return raw ? JSON.parse(raw) : [];
+    } catch (e) { return []; }
+  }
+  function persistSaved() {
+    try {
+      window.localStorage.setItem("cs.savedSites", JSON.stringify(ST.saved));
+    } catch (e) { /* private mode; the session still works */ }
+  }
+
+  /* Build a record from a lookup. Deliberately the SAME shape a harvested
+     parcel has, so every downstream thing — scoring, the meter, the claim
+     form, CSV export — works on it without a special case. */
+  function recordFromLookup(v, lat, lon) {
+    var near = nearestKnown(lat, lon);
+    var r = near ? near.row : null;
+    var p = v.parcel;
+    var rec = {
+      id: "site:" + lat.toFixed(5) + "," + lon.toFixed(5),
+      addr: (p && p.addr) || v.label || (lat.toFixed(5) + ", " + lon.toFixed(5)),
+      city: (p && p.city) || (r ? r.city : ""), state: "IL", zip: "",
+      lat: lat, lon: lon,
+      type: r ? r.type : "Site lookup",
+      subtype: p ? (p.county + " parcel") : "Checked address",
+      clsLabel: (r && r.clsLabel) || "", cls: (r && r.cls) || "",
+      pin: p ? p.pin : "",
+      county: p ? p.county : "",
+      sqft: r ? r.sqft : null,
+      lotAcres: (p && p.acres) || (r ? r.lotAcres : null),
+      yearBuilt: r ? r.yearBuilt : null,
+      assessedValue: (p && p.val) || null,
+      lastSale: { date: "", price: null },
+      owner: { name: (p && p.owner) || "", phone: "", email: "", mailing: "" },
+      ownerOfRecord: (p && p.owner) || "",
+      annualKwh: r ? r.annualKwh : null,
+      photos: [],
+      feederId: v.feederId, sub: v.sub,
+      nameplate: v.state ? v.state.nameplate : null,
+      queue: v.state ? v.state.queue : 0,
+      comed: (v.rows && v.rows[0]) ? v.rows[0].a : null,
+      comedCovering: v.covering || 1,
+      buffFt: (v.rows && v.rows[0]) ? v.rows[0].buff : null,
+      queueRefreshed: (v.rows && v.rows[0]) ? v.rows[0].refreshed : null,
+      geoSrc: v.geoSrc, geoInterp: v.geoInterp, geoStreet: v.geoStreet,
+      approx: !!v.approxPin,
+      addressResolved: v.addressResolved,
+      savedAt: new Date().toISOString(),
+      src: "lookup"
+    };
+    return rec;
+  }
+
+  function saveSite(v, lat, lon) {
+    var rec = recordFromLookup(v, lat, lon);
+    var i;
+    for (i = 0; i < ST.saved.length; i++) {
+      if (ST.saved[i].id === rec.id) { ST.saved[i] = rec; persistSaved(); return rec; }
+    }
+    ST.saved.unshift(rec);
+    persistSaved();
+    return rec;
+  }
+
+  function unsaveSite(id) {
+    ST.saved = ST.saved.filter(function (s) { return s.id !== id; });
+    persistSaved();
+  }
+  function isSaved(id) {
+    for (var i = 0; i < ST.saved.length; i++) if (ST.saved[i].id === id) return true;
+    return false;
+  }
+
   function render() {
     var rows = filtered();
     var wrap = document.getElementById("cards");
 
-    if (!ST.rows.length) {
+    /* Saved sites always list, above whatever the viewport returned, and are
+       never filtered out — a rep who deliberately kept an address should not
+       have to remember which filter is hiding it. */
+    var saved = ST.saved.map(function (s) { return enrich(s); });
+    rows = saved.concat(rows.filter(function (r) { return !isSaved(r.id); }));
+
+    if (!ST.rows.length && !saved.length) {
       head("Pan the map, then search", "Every result is scored on what the circuit will still accept, not on what the building could theoretically host.");
       wrap.innerHTML = '<div class="empty"><h3>No area searched yet</h3>' +
         '<p>Move the map over a corridor you want to work and press <b>Search this area</b>. ' +
@@ -2015,6 +2113,10 @@
   function analysePoint(lat, lon, label) {
     var name = label || (lat.toFixed(5) + ", " + lon.toFixed(5));
     head("Reading the circuit\u2026", name);
+    /* Illinois Shines is pulled alongside the circuit read so the report
+       card can say "none nearby" and mean it. It is a static bundle, cached
+       after the first load, and the circuit answer does not wait on it. */
+    if (LAY.loadILS) LAY.loadILS(function () {});
     viabilityAt(lat, lon, name, function (v) {
       v.pinned = true;
       SRC.parcelAt(lat, lon, function (e, p) {
@@ -2496,6 +2598,142 @@
 
      What genuinely cannot be scored without a building is the load half, so
      that is stated rather than guessed at. */
+  /* Keep this address. The button is at the TOP of the panel because it is
+     the action a rep takes on a site worth anything, and burying it under
+     four blocks of detail means it does not get used. */
+  /* ══════════════════════════════════════════════════════════════════════
+     SITE REPORT CARD
+
+     One block answering the four questions a rep actually asks: how big a
+     battery, on which circuit, out of which substation, and who else is
+     already on it.
+
+     WHAT COUNTS AS "OTHER INTERCONNECTIONS ON THIS CIRCUIT":
+
+       ComEd's Feeder_Q      Authoritative. Their own published queue for
+                             this feeder, in kW, refreshed quarterly. This is
+                             the number that shrinks a battery.
+       Our ledger            Claims this team has made, firm and soft.
+       Illinois Shines       AREA CONTEXT ONLY. The pins are ZIP centroids,
+                             not sited coordinates, so a project cannot be
+                             attributed to a circuit from one. Counting them
+                             as "on this feeder" would be inventing a fact.
+                             They are reported by proximity and labelled.
+     ══════════════════════════════════════════════════════════════════════ */
+  function ilsNearby(lat, lon, metres) {
+    var out = { n: 0, mw: 0, live: 0, loaded: false };
+    if (!LAY.ilsRows || !LAY.ilsState) return out;
+    /* "No projects nearby" and "the file never loaded" look identical from a
+       count of zero. Only the first is worth printing. */
+    out.loaded = LAY.ilsState() === "ready";
+    if (!out.loaded) return out;
+    var rows = LAY.ilsRows(), i, r, d;
+    for (i = 0; i < rows.length; i++) {
+      r = rows[i];
+      if (r.lat == null || r.lon == null) continue;
+      d = metresBetween(lat, lon, r.lat, r.lon);
+      if (d > metres) continue;
+      out.n++;
+      out.mw += parseFloat(r.mw || (r.kw ? r.kw / 1000 : 0)) || 0;
+      if (/energi|operat|in service/i.test(String(r.status || ""))) out.live++;
+    }
+    return out;
+  }
+
+  function reportCardHtml(v, lat, lon) {
+    if (!v.feederId || !v.state || !v.state.known) return "";
+    var st = v.state, sz = v.size;
+    var near = nearestKnown(lat, lon);
+    var r = near ? near.row : null;
+
+    /* The headline number, and what limits it. */
+    var maxByWire = Math.max(0, Math.round(st.sellable));
+    var maxByLoad = r && r.peakKw ? Math.round(r.peakKw * 0.15) : null;
+    var maxBess = maxByLoad == null ? maxByWire : Math.min(maxByWire, maxByLoad);
+    var binds = maxByLoad == null ? "circuit"
+              : (maxByLoad < maxByWire ? "load" : "circuit");
+
+    var h = '<div class="sec"><h4>Site report card</h4>';
+
+    h += '<div class="hero"><div class="big">' + fmt(maxBess) +
+         ' <small>kW</small></div><div class="cap">' +
+         'largest battery this site supports' +
+         (binds === "circuit" ? " \u2014 limited by the circuit"
+                              : " \u2014 limited by the customer\u2019s peak") +
+         '</div></div>';
+
+    h += '<div class="grid2">' +
+      g("Circuit", esc(v.feederId)) +
+      g("Substation", v.sub ? esc(v.sub) : "N/A") +
+      g("Published capacity", fmt(st.nameplate) + " kW") +
+      g("ComEd queue on this feeder", fmt(st.queue) + " kW") +
+      g("Your team\u2019s firm claims", fmt(st.firm) + " kW") +
+      g("Your team\u2019s soft holds", fmt(st.soft) + " kW") +
+      g("Left to sell", '<b>' + fmt(st.sellable) + ' kW</b>') +
+      g("Ceiling from the wire", fmt(maxByWire) + " kW") +
+      g("Ceiling from the load",
+        maxByLoad == null ? "N/A \u2014 no building load known" : fmt(maxByLoad) + " kW") +
+      g("At 2 hours", fmt(maxBess * 2) + " kWh") +
+      '</div>';
+
+    /* Interconnections, in order of authority. */
+    var lines = [];
+    if (st.queue > 0) {
+      lines.push("<b>" + fmt(st.queue) + " kW</b> of other developers\u2019 " +
+        "interconnection applications are already in ComEd\u2019s queue for " +
+        esc(v.feederId) + (v.rows && v.rows[0] && v.rows[0].refreshed
+          ? ", as of " + esc(String(v.rows[0].refreshed)) : "") +
+        ". That comes off before anything you size.");
+    } else {
+      lines.push("ComEd shows <b>nothing filed</b> in the interconnection queue " +
+        "on " + esc(v.feederId) + ".");
+    }
+    if (st.allocations && st.allocations.length) {
+      lines.push("<b>" + st.allocations.length + "</b> claim" +
+        (st.allocations.length === 1 ? "" : "s") + " from your own team on this " +
+        "circuit, already netted off the figure above.");
+    }
+    if (v.covering > 1) {
+      lines.push(v.covering + " circuits cover this point \u2014 the buffers overlap. " +
+        "This is the one with the most headroom; which you can physically reach " +
+        "is settled by the interconnection study.");
+    }
+
+    /* Illinois Shines, deliberately separated and qualified. */
+    var ils = ilsNearby(lat, lon, 1600);
+    if (ils.n) {
+      lines.push("<b>" + ils.n + "</b> Illinois Shines solar project" +
+        (ils.n === 1 ? "" : "s") + " within a mile" +
+        (ils.mw ? ", " + ils.mw.toFixed(2) + " MW total" : "") +
+        (ils.live ? ", " + ils.live + " energised" : "") +
+        ". <b>These are NOT attributed to this circuit</b> \u2014 Illinois Shines " +
+        "publishes ZIP centroids, not sited coordinates, so a project cannot be " +
+        "placed on a feeder from one. Read it as area activity, not as queue.");
+    } else if (ils.loaded) {
+      lines.push("No Illinois Shines projects within a mile of this point.");
+    }
+
+    h += '<h4 style="margin-top:12px">Other interconnections</h4>' +
+         '<p class="note">' + lines.join("<br>") + '</p></div>';
+    return h;
+  }
+
+  function saveBlockHtml(v, lat, lon) {
+    var id = "site:" + lat.toFixed(5) + "," + lon.toFixed(5);
+    var have = isSaved(id);
+    return '<div class="sec"><div class="setKeyRow">' +
+      '<button id="dSave" data-lat="' + lat + '" data-lon="' + lon + '">' +
+      (have ? "Saved \u2713  \u00b7  remove" : "Save this site") + '</button>' +
+      '</div><p class="note">' +
+      (have
+        ? "This site is in your list and will still be there after a reload. " +
+          "It exports with everything else."
+        : "Keeps this address in the list with its circuit, capacity and score, " +
+          "so it survives a pan, a re-search and a reload \u2014 and lands in the " +
+          "CSV export.") +
+      '</p></div>';
+  }
+
   function scoreBlockHtml(v, lat, lon) {
     if (!v.feederId || !v.state || !v.state.known) return "";
     var near = nearestKnown(lat, lon);
@@ -2614,6 +2852,8 @@
       '</div>' +
       '<div class="sec"><h4>How this circuit was matched</h4>' +
         '<p class="note">' + esc(matchLine(v)) + '</p></div>' +
+      reportCardHtml(v, lat, lon) +
+      saveBlockHtml(v, lat, lon) +
       scoreBlockHtml(v, lat, lon) +
       comedRecordHtml(v.rows && v.rows[0] ? v.rows[0].a : null, v.covering) +
       parcelBlockHtml(v.parcel) +
@@ -2631,6 +2871,17 @@
       drawerHtml(rec);
     document.getElementById("drawer").className = "open";
     wireDrawer(rec);
+
+    var sb = document.getElementById("dSave");
+    if (sb) sb.onclick = function () {
+      var id = "site:" + lat.toFixed(5) + "," + lon.toFixed(5);
+      if (isSaved(id)) unsaveSite(id); else saveSite(v, lat, lon);
+      /* Re-render both: the button label and the list have to agree, and the
+         saved site should appear in the list immediately rather than after
+         the next pan. */
+      showViability(v, lat, lon);
+      render();
+    };
   }
 
   function closeDrawer() {
@@ -3169,21 +3420,34 @@
 
   /* -------------------------------------------------------------- export */
   document.getElementById("expCsv").onclick = function () {
-    var rows = ST.view === "ledger" ? null : filtered();
+    /* Saved sites export too, and first. They are the ones a rep chose. */
+    var rows = ST.view === "ledger" ? null
+      : ST.saved.map(function (s) { return enrich(s); })
+          .concat(filtered().filter(function (r) { return !isSaved(r.id); }));
     var text, name;
     if (rows) {
-      var head2 = ["address", "city", "type", "sqft", "owner", "circuit", "substation",
+      var head2 = ["saved", "address", "city", "county", "pin", "type", "class", "sqft",
+        "lot_acres", "owner", "circuit", "substation",
         "circuit_kw", "queue_kw", "our_firm_kw", "our_holds_kw", "sellable_kw",
         "deliverable_kw", "deliverable_kwh", "binding_constraint", "peak_kw", "annual_kwh",
-        "kwh_source", "score", "circuit_status", "lat", "lon"];
+        "kwh_source", "battery_score", "large_load_score", "circuit_status",
+        "queue_refreshed", "circuits_covering", "address_resolved", "position_source",
+        "lat", "lon"];
       var out = [head2];
       for (var i = 0; i < rows.length; i++) {
         var r = rows[i], s = r.circ;
-        out.push([r.addr, r.city, r.type, r.sqft, r.owner.name, r.feederId, r.sub,
+        out.push([isSaved(r.id) ? "yes" : "", r.addr, r.city, r.county || "", r.pin || "",
+          r.type, r.clsLabel || "", r.sqft, r.lotAcres,
+          r.owner.name, r.feederId, r.sub,
           s.nameplate, s.queue, s.firm, s.soft, s.sellable, r.sz.kw, r.sz.kwh, r.sz.binds,
           r.peakKw == null ? "" : Math.round(r.peakKw),
           r.annualKwh ? r.annualKwh.value : "", r.annualKwh ? r.annualKwh.src : "",
-          r.score, r.cst.label, r.lat, r.lon]);
+          r.score, r.loadScore, r.cst.label,
+          r.queueRefreshed || "", r.comedCovering || "",
+          r.addressResolved === false ? "no" : "yes",
+          r.approx ? "ZIP centroid" : r.geoStreet ? "street level"
+            : r.geoInterp ? "interpolated" : r.geoSrc || "parcel centroid",
+          r.lat, r.lon]);
       }
       text = out.map(function (rr) {
         return rr.map(function (c) {
@@ -3233,6 +3497,10 @@
 
   /* ---------------------------------------------------------------- boot */
   connect();
+  /* Saved sites come back BEFORE the first render, so a reload shows the
+     rep's own list immediately rather than an empty panel that fills in
+     later — the gap is what makes people think the work was lost. */
+  ST.saved = loadSaved();
   wireSettings();
   wireLayers();
   render();

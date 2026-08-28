@@ -685,7 +685,7 @@
      Shown in Settings and stamped into the diagnostics log. Several rounds of
      debugging have been spent on the question "is the deployed file the one
      we just changed", and a screenshot cannot answer it. Now it can. */
-  var CS_BUILD = "2026-08-28 18:32 UTC";
+  var CS_BUILD = "2026-08-28 18:41 UTC";
 
   function savedTileKey() {
     try { return window.localStorage.getItem("cs.tileKey") || ""; }
@@ -2113,12 +2113,26 @@
      is the deliberate act that keeps it. */
   function setCurrent(v, lat, lon) {
     var rec = recordFromLookup(v, lat, lon);
-    /* If it is already starred, keep the starred copy authoritative and
-       refresh it in place rather than showing the same site twice. */
+
+    /* A LOOKUP ALWAYS PRODUCES A CARD, starred or not.
+
+       This used to clear ST.current when the address was already starred, on
+       the reasoning that showing it twice was noise. That held while starred
+       sites appeared in every view. They no longer do — so searching one of
+       your own starred addresses returned "no matches" while the header
+       above it read "901 kW available on this circuit". Searching a site you
+       care enough about to have starred is the LAST case that should come
+       back empty.
+
+       The starred copy is still refreshed in place, so its circuit and
+       capacity stay current; the difference is that the search also puts the
+       site in front of you where you just asked for it. */
     var i;
     for (i = 0; i < ST.saved.length; i++) {
       if (ST.saved[i].id === rec.id) {
-        ST.saved[i] = rec; persistSaved(); ST.current = null; return rec;
+        ST.saved[i] = rec;
+        persistSaved();
+        break;
       }
     }
     ST.current = rec;
@@ -2448,8 +2462,10 @@
     }
     /* The one site currently being looked at, ahead of the starred list.
        Not persisted, replaced by the next lookup. */
+    /* The current lookup, whether or not it is starred. Only the Starred tab
+       leaves it out, because there it would genuinely be the same row twice. */
     var current = null;
-    if (ST.current && !isSaved(ST.current.id)) {
+    if (ST.current) {
       try { current = enrich(ST.current); }
       catch (err) {
         broke.push((ST.current.addr || "the current site") + " \u2014 " +
@@ -2502,6 +2518,12 @@
        current viewport still appears, because it IS in front of them — it
        just arrives as a viewport result rather than being pinned to the top
        of every screen. */
+    /* The lookup wins over a viewport row for the same site: it was asked
+       about directly and carries the fresher read. */
+    if (current) {
+      rows = rows.filter(function (r) { return r.id !== current.id; });
+      imported = imported.filter(function (r) { return r.id !== current.id; });
+    }
     rows = (ST.view === "saved")
       ? saved
       : (current ? [current] : []).concat(imported, rows);

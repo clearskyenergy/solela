@@ -672,7 +672,7 @@
      Shown in Settings and stamped into the diagnostics log. Several rounds of
      debugging have been spent on the question "is the deployed file the one
      we just changed", and a screenshot cannot answer it. Now it can. */
-  var CS_BUILD = "2026-08-28 15:58 UTC";
+  var CS_BUILD = "2026-08-28 16:37 UTC";
 
   function savedTileKey() {
     try { return window.localStorage.getItem("cs.tileKey") || ""; }
@@ -4644,24 +4644,69 @@
                   "see them.", true);
         return;
       }
-      L.attach(db, ORG, function (err) {
-        if (err) {
-          /* A rules rejection is the likeliest cause and the most dangerous,
-             because everything still LOOKS fine. */
-          localMode("Connected and signed in, but the ledger would not attach: " +
-                    (err.message || err) + ". If that mentions permissions, the " +
-                    "Firestore rules for capacityAllocations are not deployed, " +
-                    "or this account's token carries no orgId.");
+
+      /* THE TOKEN DECIDES WHICH ORG, NOT THE URL.
+
+         ORG came from ?org= in the address bar, and the Firestore rules
+         compare the queried orgId against request.auth.token.orgId. If those
+         two strings differ by so much as a suffix, Firestore refuses the
+         whole query and the only symptom is "Missing or insufficient
+         permissions" — which reads like a rules problem when it is really a
+         mismatched or absent custom claim.
+
+         So the claim wins when it exists. A URL parameter is a convenience;
+         the token is what the database will actually accept. */
+      u.getIdTokenResult().then(function (tok) {
+        var claims = (tok && tok.claims) || {};
+        var claimOrg = claims.orgId || claims.org || claims.tenantId || null;
+
+        if (!claimOrg) {
+          localMode("Signed in as " + (u.email || u.uid) + ", but this account's " +
+            "token carries NO orgId claim. The Firestore rules match " +
+            "request.auth.token.orgId against the record's orgId, so with no " +
+            "claim every read is refused. Someone with admin access has to set " +
+            "the custom claim on this user \u2014 it cannot be fixed from the " +
+            "browser. Until then the ledger cannot be shared." +
+            (claims ? "  Claims present: " +
+              (Object.keys(claims).join(", ") || "none") + "." : ""));
           return;
         }
-        var t = document.getElementById("srcTag");
-        t.textContent = "Shared ledger \u00b7 " + (u.email || u.uid).split("@")[0];
-        t.title = "Claims are visible to everyone in " + ORG +
-                  ". Signed in as " + (u.email || u.uid) + ".";
-        t.style.cssText = "color:#2ea043;background:#eef8f0;border-color:#c6e6cd";
-        SYNC_NOTE = "";
-        refreshAll(ST.sel);
+
+        if (claimOrg !== ORG) {
+          /* Recoverable, and worth recovering automatically: the account is
+             valid, the page was just opened with the wrong org in the URL. */
+          var was = ORG;
+          ORG = claimOrg;
+          attachNow(u, "Opened with ?org=" + was + " but this account belongs to " +
+                       claimOrg + ". Using the account's org.");
+          return;
+        }
+        attachNow(u, "");
+      }).catch(function (e) {
+        localMode("Could not read this account's token: " + (e.message || e));
       });
+
+      function attachNow(u2, note) {
+        L.attach(db, ORG, function (err) {
+          if (err) {
+            localMode("Signed in as " + (u2.email || u2.uid) + " with orgId \u201c" +
+              ORG + "\u201d, and Firestore still refused: " + (err.message || err) +
+              ". The token is fine, so the Firestore RULES for " +
+              "capacityAllocations are not deployed on this project \u2014 that " +
+              "is the remaining explanation.");
+            return;
+          }
+          var t = document.getElementById("srcTag");
+          t.textContent = "Shared ledger \u00b7 " + (u2.email || u2.uid).split("@")[0];
+          t.title = "Claims are visible to everyone in " + ORG +
+                    ". Signed in as " + (u2.email || u2.uid) + "." +
+                    (note ? "  " + note : "");
+          t.style.cssText = "color:#2ea043;background:#eef8f0;border-color:#c6e6cd";
+          t.onclick = null;
+          SYNC_NOTE = "";
+          refreshAll(ST.sel);
+        });
+      }
     });
   }
 

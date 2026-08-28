@@ -685,7 +685,7 @@
      Shown in Settings and stamped into the diagnostics log. Several rounds of
      debugging have been spent on the question "is the deployed file the one
      we just changed", and a screenshot cannot answer it. Now it can. */
-  var CS_BUILD = "2026-08-28 18:28 UTC";
+  var CS_BUILD = "2026-08-28 18:32 UTC";
 
   function savedTileKey() {
     try { return window.localStorage.getItem("cs.tileKey") || ""; }
@@ -2467,7 +2467,9 @@
     var vb = map.getBounds();
     rows = rows.filter(function (r) {
       if (isHidden(r.id)) return false;     /* dismissed by the rep */
-      if (isSaved(r.id)) return false;      /* merged in below instead */
+      /* Starred sites are NOT excluded here any more. One that genuinely
+         sits in this viewport belongs in the list like anything else; it is
+         only the unconditional pinning to the top that was wrong. */
       if (r.lat == null || r.lon == null) return true;
       return vb.contains([r.lat, r.lon]);
     });
@@ -2483,13 +2485,26 @@
     for (ii = 0; ii < ST.imported.length; ii++) {
       var im = ST.imported[ii];
       if (im.lat == null || im.lon == null) continue;
-      if (isHidden(im.id) || isSaved(im.id)) continue;
+      if (isHidden(im.id)) continue;
       if (!vb.contains([im.lat, im.lon])) continue;
       try { imported.push(enrich(im)); } catch (e) {}
     }
+    /* STARRED SITES LIVE IN THE STARRED TAB, AND NOWHERE ELSE.
+
+       They used to be prepended to every view. The working panel then filled
+       up with sites the rep had already filed, pushing the thing they were
+       actually looking at down the page — and repeating, in a list meant for
+       "what is in front of me", a list that already has its own tab.
+
+       So the working views show what the rep is working: the address they
+       just looked up, anything imported that falls in the viewport, and what
+       "Search this area" returned. A starred site that genuinely sits in the
+       current viewport still appears, because it IS in front of them — it
+       just arrives as a viewport result rather than being pinned to the top
+       of every screen. */
     rows = (ST.view === "saved")
       ? saved
-      : (current ? [current] : []).concat(saved, imported, rows);
+      : (current ? [current] : []).concat(imported, rows);
     /* Index everything on screen so the star can find a record by id
        whether it came from the viewport or the saved list. */
     for (si = 0; si < rows.length; si++) ST.byId[rows[si].id] = rows[si];
@@ -2497,12 +2512,23 @@
     var sn = document.getElementById("savedN");
     if (sn) sn.textContent = ST.saved.length ? "(" + ST.saved.length + ")" : "";
 
-    if (!ST.rows.length && !saved.length && !current) {
-      head("Pan the map, then search", "Every result is scored on what the circuit will still accept, not on what the building could theoretically host.");
-      wrap.innerHTML = '<div class="empty"><h3>No area searched yet</h3>' +
-        '<p>Move the map over a corridor you want to work and press <b>Search this area</b>. ' +
-        'Properties come back with the circuit they sit on, how much of that circuit is left, ' +
-        'and who on the team has already claimed part of it.</p></div>';
+    /* Nothing to work yet. Starred sites do not count here: having filed
+       six of them does not mean this viewport has anything in it, and
+       pretending otherwise is how the panel used to look busy while showing
+       nothing relevant. They are one click away and the message says so. */
+    if (!ST.rows.length && !current && !imported.length) {
+      head("Search an address, or search this area",
+           "Every result is scored on what the circuit will still accept, not on " +
+           "what the building could theoretically host.");
+      wrap.innerHTML = '<div class="empty"><h3>Nothing in this view yet</h3>' +
+        '<p>Type an address above to check one site, or move the map over a ' +
+        'corridor and press <b>Search this area</b>. Results come back with the ' +
+        'circuit they sit on, how much of that circuit is left, and who on the ' +
+        'team has already claimed part of it.</p>' +
+        (saved.length
+          ? '<p><b>' + saved.length + ' starred site' + (saved.length === 1 ? "" : "s") +
+            '</b> are waiting in the <b>Starred</b> tab.</p>'
+          : '') + '</div>';
       drawMarkers([]);
       return;
     }
@@ -2788,9 +2814,15 @@
       if (st.firm)  segs += '<div class="seg f" style="width:' + pct(st.firm) + '%"></div>';
       if (st.soft)  segs += '<div class="seg s" style="width:' + pct(st.soft) + '%"></div>';
     }
+    /* `mine` is the capacity this very site holds, which feederState()
+       excluded so the rep can resize their own project. Saying "901 kW free"
+       without saying "because 901 of it is yours" is how a card reads
+       identical to an untouched circuit. */
     var right = st.oversubscribed
       ? "over by " + fmt(st.overBy) + " kW"
-      : fmt(st.sellable) + " kW free";
+      : st.mine
+        ? fmt(st.sellable) + " kW free \u00b7 " + fmt(st.mine) + " kW is yours"
+        : fmt(st.sellable) + " kW free";
     return '<div class="meter' + (tall ? ' tall' : '') + '">' +
       '<div class="track">' + segs + '</div>' +
       '<div class="lg"><span>' + fmt(st.nameplate) + ' kW circuit</span><span>' + right + '</span></div></div>';
@@ -2809,6 +2841,35 @@
   function cardHtml(r) {
     var blockedBy = liveClaims(r);
     var warn = "";
+
+    /* ── YOUR OWN HOLD IS SHOWN ON YOUR OWN CARD ────────────────────
+       feederState() drops a site's own claims when sizing that site, so a
+       rep re-opening their own project is not blocked by their own hold.
+       That is right for the arithmetic and wrong for the card: 125 S Grant
+       held all 901 kW of W5615 and its card still read "901 kW free ·
+       Circuit open", identical to an untouched site. The ledger said the
+       circuit was fully taken; the card said help yourself.
+
+       A claim you cannot see on the thing you claimed is not a claim. */
+    var ownLive = [], oi;
+    if (r.mine) {
+      for (oi = 0; oi < r.mine.length; oi++)
+        if (!L.isExpired(r.mine[oi])) ownLive.push(r.mine[oi]);
+    }
+    var ownKw = 0;
+    for (oi = 0; oi < ownLive.length; oi++) ownKw += (ownLive[oi].kw || 0);
+    if (ownLive.length) {
+      var st0 = L.statusOf(ownLive[0].status);
+      warn += '<div class="warn hold"><b>You hold ' + fmt(ownKw) + ' kW here.</b> ' +
+        esc(st0.label) +
+        (ownLive[0].rep ? ' by ' + esc(ownLive[0].rep) : '') +
+        (ownLive[0].expiresAt
+           ? ' \u00b7 ' + Math.max(0, Math.ceil((ownLive[0].expiresAt - Date.now()) / 86400000)) +
+             'd left'
+           : ' \u00b7 no expiry') +
+        '. The figures below EXCLUDE it, so you can resize this project \u2014 ' +
+        'they are not what a colleague sees on this circuit.</div>';
+    }
     if (blockedBy.length) {
       var a = blockedBy[0];
       var sev = (r.circ.sellable || 0) <= 0;
@@ -2842,7 +2903,11 @@
           (isSaved(r.id) ? "Starred \u2014 click to remove" : "Star this site") +
           '" aria-label="' + (isSaved(r.id) ? "Remove star" : "Star this site") +
           '">' + (isSaved(r.id) ? "\u2605" : "\u2606") + '</button>' +
-        '<span class="cst" style="background:' + r.cst.color + '">' + esc(r.cst.label) + '</span>' +
+        /* "Circuit open" on a circuit this very site has fully claimed is
+           the sentence that misleads. Your own hold renames the pill. */
+        '<span class="cst" style="background:' +
+          (ownLive.length ? "#c98a2b" : r.cst.color) + '">' +
+          esc(ownLive.length ? "You hold this" : r.cst.label) + '</span>' +
       '</div>' +
       '<div class="bd">' +
         '<div class="kw">' + kwTxt + ' <small>kW deliverable</small></div>' +

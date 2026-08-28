@@ -104,10 +104,10 @@
     background:rgba(245,246,248,.97);overflow-y:auto;border-right:1px solid var(--line);
     scroll-behavior:smooth;box-shadow:6px 0 26px rgba(26,39,51,.12)}
   body.v-map #listPane{display:none}
-  body.v-list #mapPane{display:none}
-  body.v-list #listPane{position:static;width:100%;border-right:0;box-shadow:none;
+  body.v-list #mapPane,body.v-saved #mapPane{display:none}
+  body.v-list #listPane,body.v-saved #listPane{position:static;width:100%;border-right:0;box-shadow:none;
     background:var(--bg);height:100%}
-  body.v-list #cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(340px,1fr));
+  body.v-list #cards,body.v-saved #cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(340px,1fr));
     gap:12px;padding:14px 16px}
   body.v-ledger #stage{display:none}
   #ledgerPane{position:absolute;top:calc(var(--topH) + var(--filtH));left:0;right:0;bottom:0;
@@ -125,7 +125,13 @@
   .card{background:#fff;border:1px solid var(--line);border-radius:12px;overflow:hidden;
     margin-bottom:12px;cursor:pointer;transition:box-shadow .14s,border-color .14s;
     display:flex;flex-direction:column}
-  body.v-list .card{margin-bottom:0}
+  body.v-list .card,body.v-saved .card{margin-bottom:0}
+  .star{position:absolute;top:8px;right:8px;z-index:3;width:30px;height:30px;
+    border:0;border-radius:50%;background:rgba(255,255,255,.92);color:#8a94a0;
+    font-size:17px;line-height:28px;cursor:pointer;padding:0;
+    box-shadow:0 1px 3px rgba(26,39,51,.22)}
+  .star.on{color:#c98a2b}
+  .star:hover{background:#fff;color:#c98a2b}
   .card:hover,.card.hot{box-shadow:0 6px 20px rgba(26,39,51,.13);border-color:#c3cdd7}
   .card:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
   .card.blocked{background:#fffaf9}
@@ -348,6 +354,7 @@
     <button type="button" data-view="split" class="on">Split</button>
     <button type="button" data-view="map">Map</button>
     <button type="button" data-view="list">List</button>
+    <button type="button" data-view="saved">Starred <span id="savedN"></span></button>
     <button type="button" data-view="ledger">Circuit ledger</button>
   </div>
   <div class="spacer"></div>
@@ -586,7 +593,7 @@
      Shown in Settings and stamped into the diagnostics log. Several rounds of
      debugging have been spent on the question "is the deployed file the one
      we just changed", and a screenshot cannot answer it. Now it can. */
-  var CS_BUILD = "2026-08-28 00:31 UTC";
+  var CS_BUILD = "2026-08-28 00:34 UTC";
 
   function savedTileKey() {
     try { return window.localStorage.getItem("cs.tileKey") || ""; }
@@ -1139,7 +1146,42 @@
     r.lf = lf;
     r.sz = sz;
     r.circ = sz.state;   /* circuit state. NOT r.state — that is the postal state. */
-    r.cst = L.circuitStatus(sz.state);
+
+    /* THE RECORD IS THE FALLBACK, not a contradiction to be printed.
+
+       A card was showing "Circuit unknown" while printing its own feeder id
+       underneath and while the header showed that circuit's capacity. The
+       ledger is the source of truth when it has the feeder, but when it does
+       not — a reload, a cache miss, a record saved before the feeder was
+       registered — the record's OWN published figures are better than a
+       dash. ComEd gave us those numbers; refusing to show them because an
+       in-memory registry has not caught up is worse than useless.
+
+       Anything reconstructed this way is marked so the card can say where it
+       came from rather than implying the ledger confirmed it. */
+    if (!r.circ.known && r.nameplate != null) {
+      var np = +r.nameplate, q = +(r.queue || 0);
+      var after = Math.max(0, np - q);
+      r.circ = {
+        feederId: r.feederId, sub: r.sub || "", known: true,
+        nameplate: np, queue: q, firm: 0, soft: 0, lapsed: 0, mine: 0,
+        committed: q, firmAvailable: after, sellable: after,
+        oversubscribed: false, overBy: 0,
+        pctUsed: np > 0 ? q / np : 0,
+        allocations: [], fromRecord: true
+      };
+      r.sz = {
+        kw: loadKw == null ? Math.round(after) : Math.round(Math.min(loadKw, after)),
+        hours: 2,
+        loadCeiling: loadKw == null ? null : Math.round(loadKw),
+        circuitCeiling: Math.round(after),
+        state: r.circ
+      };
+      r.sz.kwh = r.sz.kw * 2;
+      r.sz.circuitLimited = loadKw == null || after <= loadKw;
+      r.sz.binds = r.sz.circuitLimited ? "circuit" : "load";
+    }
+    r.cst = L.circuitStatus(r.circ);
     r.claims = L.neighbourClaims(r.feederId, r.id);
     r.mine = L.allocationsForSite(r.id);
     r.saveLo = sz.kw ? sz.kw * DEMAND_LO * 12 : null;
@@ -1696,7 +1738,16 @@
       if (r.lat == null || r.lon == null) return true;
       return vb.contains([r.lat, r.lon]);
     });
-    rows = saved.concat(rows);
+    /* The Starred view is the same cards, restricted to what the rep kept,
+       and NOT restricted by the viewport — the whole point of starring a
+       site is being able to come back to it from anywhere on the map. */
+    rows = (ST.view === "saved") ? saved : saved.concat(rows);
+    /* Index everything on screen so the star can find a record by id
+       whether it came from the viewport or the saved list. */
+    for (si = 0; si < rows.length; si++) ST.byId[rows[si].id] = rows[si];
+
+    var sn = document.getElementById("savedN");
+    if (sn) sn.textContent = ST.saved.length ? "(" + ST.saved.length + ")" : "";
 
     if (!ST.rows.length && !saved.length) {
       head("Pan the map, then search", "Every result is scored on what the circuit will still accept, not on what the building could theoretically host.");
@@ -1704,6 +1755,16 @@
         '<p>Move the map over a corridor you want to work and press <b>Search this area</b>. ' +
         'Properties come back with the circuit they sit on, how much of that circuit is left, ' +
         'and who on the team has already claimed part of it.</p></div>';
+      drawMarkers([]);
+      return;
+    }
+    if (!rows.length && ST.view === "saved") {
+      head("No starred sites yet",
+           "Star a site from its card or its panel and it will wait here for you.");
+      wrap.innerHTML = '<div class="empty"><h3>Nothing starred</h3>' +
+        '<p>Search an address or click the map, then press the star on the card. ' +
+        'Starred sites ignore the filters and the viewport \u2014 they are here ' +
+        'until you remove them, including after a reload.</p></div>';
       drawMarkers([]);
       return;
     }
@@ -2021,6 +2082,14 @@
       '" tabindex="0" role="button" data-id="' + esc(r.id) + '">' +
       '<div class="ph">' + photo(r) +
         '<span class="badge">' + esc(r.type) + '</span>' +
+        /* The star sits on the card itself so a site can be kept without
+           opening it — a rep scanning a corridor should be able to flag
+           three sites and come back to them, not open three panels. */
+        '<button class="star' + (isSaved(r.id) ? ' on' : '') +
+          '" data-star="' + esc(r.id) + '" title="' +
+          (isSaved(r.id) ? "Starred \u2014 click to remove" : "Star this site") +
+          '" aria-label="' + (isSaved(r.id) ? "Remove star" : "Star this site") +
+          '">' + (isSaved(r.id) ? "\u2605" : "\u2606") + '</button>' +
         '<span class="cst" style="background:' + r.cst.color + '">' + esc(r.cst.label) + '</span>' +
       '</div>' +
       '<div class="bd">' +
@@ -3508,6 +3577,20 @@
 
   /* --------------------------------------------------------------- wiring */
   document.getElementById("cards").addEventListener("click", function (e) {
+    /* The star must not also open the card — a rep flagging three sites in a
+       row should not have three panels open behind them. */
+    var s = e.target.closest ? e.target.closest("[data-star]") : null;
+    if (s) {
+      e.stopPropagation();
+      var sid = s.getAttribute("data-star");
+      if (isSaved(sid)) unsaveSite(sid);
+      else {
+        var rec = ST.byId[sid];
+        if (rec) { ST.saved.unshift(rec); persistSaved(); }
+      }
+      render();
+      return;
+    }
     var c = e.target.closest ? e.target.closest(".card") : null;
     if (c) select(c.getAttribute("data-id"));
   });
@@ -3531,7 +3614,13 @@
       document.body.className = "v-" + name;
       ST.view = name;
       if (name === "ledger") { closeDrawer(); renderLedger(); }
-      else setTimeout(function () { map.invalidateSize(); }, 60);
+      else {
+        /* Starred is the list restricted to sites the rep kept. It reuses
+           the same cards, so a starred site behaves identically — clicking
+           one still opens the full report. */
+        render();
+        setTimeout(function () { map.invalidateSize(); }, 60);
+      }
     };
   }
 

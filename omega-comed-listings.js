@@ -198,7 +198,18 @@
       sqft: sqft, lotAcres: num(e.ac),
       type: type, subtype: str(e.n),
       yearBuilt: num(e.yr),
-      owner: { name: str(e.nm), mailing: str(e.co2), phone: str(e.ph), email: str(e.em) },
+      /* The EDC feed's contact is a LISTING contact — a broker, or an
+         economic-development officer at the agency that published the site.
+         It is NOT the owner of record, and rendering it in the owner slot
+         produced cards attributing a warehouse to a named individual at a
+         development agency. A rep reading that calls the wrong person, and
+         a person who never asked to be a sales lead ends up on one.
+
+         So the contact travels in its own field, labelled, and the owner
+         stays empty until an assessor record fills it. */
+      owner: { name: "", mailing: "", phone: "", email: "" },
+      listingContact: { name: str(e.nm), org: str(e.co2),
+                        phone: str(e.ph), email: str(e.em) },
       lastSale: { date: "", price: null },
       assessedValue: null,
       photos: [],

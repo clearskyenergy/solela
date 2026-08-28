@@ -586,7 +586,7 @@
      Shown in Settings and stamped into the diagnostics log. Several rounds of
      debugging have been spent on the question "is the deployed file the one
      we just changed", and a screenshot cannot answer it. Now it can. */
-  var CS_BUILD = "2026-08-28 00:11 UTC";
+  var CS_BUILD = "2026-08-28 00:20 UTC";
 
   function savedTileKey() {
     try { return window.localStorage.getItem("cs.tileKey") || ""; }
@@ -1643,7 +1643,21 @@
        never filtered out — a rep who deliberately kept an address should not
        have to remember which filter is hiding it. */
     var saved = ST.saved.map(function (s) { return enrich(s); });
-    rows = saved.concat(rows.filter(function (r) { return !isSaved(r.id); }));
+
+    /* GHOSTS. When a viewport search returns nothing the old rows were kept
+       — "nothing was returned, so the list below is unchanged" — which was
+       meant to avoid blanking the panel on a transient failure. What it
+       actually produced was a card for a site two miles away sitting under a
+       map showing somewhere else, with a header claiming 1 site in view.
+       A result that is not in the current view is not a result. Saved sites
+       are exempt because keeping them is the whole point. */
+    var vb = map.getBounds();
+    rows = rows.filter(function (r) {
+      if (isSaved(r.id)) return false;      /* merged in below instead */
+      if (r.lat == null || r.lon == null) return true;
+      return vb.contains([r.lat, r.lon]);
+    });
+    rows = saved.concat(rows);
 
     if (!ST.rows.length && !saved.length) {
       head("Pan the map, then search", "Every result is scored on what the circuit will still accept, not on what the building could theoretically host.");
@@ -1731,13 +1745,22 @@
   }
 
   function peersHtml(r) {
+    /* A record with no feeder produced "No other property in the current
+       view sits on ." — a sentence with a hole in it. No circuit means the
+       question does not apply. */
+    if (!r.feederId) {
+      return '<div class="sec"><h4>Others on this circuit</h4><p class="note">' +
+        'No circuit is attributed to this site, so there is nothing to compare ' +
+        'against. Zoom to 14+ so circuits resolve, or confirm the serving feeder ' +
+        'with ComEd.</p></div>';
+    }
     var p = circuitPeers(r.feederId, r.id);
     var st = r.circ;
     if (!p.n) {
       return '<div class="sec"><h4>Others on this circuit</h4><p class="note">' +
-        'No other property in the current view sits on ' + esc(r.feederId) +
-        '. That is a floor, not a total \u2014 widen the map to see the rest of ' +
-        'the circuit.</p></div>';
+        'No other property in the current view sits on <b>' + esc(r.feederId) +
+        '</b>. That is a floor, not a total \u2014 widen the map to see the rest ' +
+        'of the circuit.</p></div>';
     }
     var lines = [];
     lines.push('<b>' + p.n + '</b> other propert' + (p.n === 1 ? "y" : "ies") +
@@ -1844,7 +1867,14 @@
             (shows("type") ? esc(r.subtype || r.type) +
               (r.yearBuilt ? ' &middot; built ' + r.yearBuilt : '') : '') + '</div>'
           : '') +
-        (shows("owner") ? '<div class="own">' + esc(r.owner.name || "Owner not resolved") + '</div>' : '') +
+        /* Owner, or the listing contact clearly labelled as one. Never the
+           contact silently occupying the owner line. */
+        (shows("owner")
+          ? '<div class="own">' + (r.owner.name
+              ? esc(r.owner.name)
+              : (r.listingContact && r.listingContact.name
+                  ? "Listing contact: " + esc(r.listingContact.name)
+                  : "Owner not resolved")) + '</div>' : '') +
         (shows("energy") && r.annualKwh
           ? '<div class="own">' + fmt(r.annualKwh.value) + ' kWh/yr \u00b7 ' + esc(r.annualKwh.src) + '</div>' : '') +
         (shows("sale") && r.lastSale && r.lastSale.price
@@ -2121,7 +2151,18 @@
       v.pinned = true;
       SRC.parcelAt(lat, lon, function (e, p) {
         v.parcel = p || null;
+        /* The address becomes a CARD immediately, without waiting for anyone
+           to press Save. A rep who types an address has already decided it is
+           worth looking at; making them take a second action before it
+           appears in their list is friction for no reason, and it is why the
+           left panel kept showing "no matches" next to a panel full of real
+           answers. Save/remove then controls whether it PERSISTS. */
+        var rec = saveSite(v, lat, lon);
         showViability(v, lat, lon);
+        render();
+        /* Scroll the new card into view so it is obvious something happened. */
+        var el = document.querySelector('.card[data-id="' + cssEsc(rec.id) + '"]');
+        if (el && el.scrollIntoView) el.scrollIntoView({ block: "nearest" });
       });
     });
   }
@@ -3071,12 +3112,30 @@
           'not read off a meter. Confirm against twelve months of bills before pricing.</div>' : '') +
       '</div>');
 
-    /* -- owner ---------------------------------------------------------- */
+    /* -- owner ----------------------------------------------------------
+       Owner of record and listing contact are different people and are kept
+       apart. Merging them put a development-agency officer in the owner slot
+       on every EDC-sourced card. */
     h.push('<div class="sec"><h4>Owner</h4><div class="grid2">' +
-      g("Name", esc(r.owner.name || "\u2014")) +
-      g("Phone", r.owner.phone ? esc(r.owner.phone) : "\u2014") +
-      g("Email", r.owner.email ? esc(r.owner.email) : "\u2014") +
-      '</div></div>');
+      g("Name", esc(r.owner.name || "N/A")) +
+      g("Phone", r.owner.phone ? esc(r.owner.phone) : "N/A") +
+      g("Email", r.owner.email ? esc(r.owner.email) : "N/A") +
+      '</div>' +
+      (r.owner.name ? "" :
+        '<p class="note">No owner of record. Parcel files carry it; this record ' +
+        'came from a listing feed, which does not.</p>') +
+      '</div>');
+
+    if (r.listingContact && r.listingContact.name) {
+      h.push('<div class="sec"><h4>Listing contact</h4><div class="grid2">' +
+        g("Name", esc(r.listingContact.name)) +
+        g("Organisation", esc(r.listingContact.org || "N/A")) +
+        g("Phone", r.listingContact.phone ? esc(r.listingContact.phone) : "N/A") +
+        g("Email", r.listingContact.email ? esc(r.listingContact.email) : "N/A") +
+        '</div><p class="note">Whoever published this site to the Illinois EDC ' +
+        'feed \u2014 usually a broker or an economic-development officer, not the ' +
+        'owner. They can point you at the owner; they are not one.</p></div>');
+    }
 
     return h.join("");
   }
@@ -3399,7 +3458,13 @@
         v.pinned = true;
         SRC.parcelAt(lat, lon, function (e, p) {
           v.parcel = p || null;
+          /* Same as a dropped pin: the searched address becomes a card in
+             the list straight away. */
+          var rec = saveSite(v, lat, lon);
           showViability(v, lat, lon);
+          render();
+          var el = document.querySelector('.card[data-id="' + cssEsc(rec.id) + '"]');
+          if (el && el.scrollIntoView) el.scrollIntoView({ block: "nearest" });
           if (hasSource()) run(true);
         });
       });

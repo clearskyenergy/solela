@@ -586,7 +586,7 @@
      Shown in Settings and stamped into the diagnostics log. Several rounds of
      debugging have been spent on the question "is the deployed file the one
      we just changed", and a screenshot cannot answer it. Now it can. */
-  var CS_BUILD = "2026-08-28 00:20 UTC";
+  var CS_BUILD = "2026-08-28 00:26 UTC";
 
   function savedTileKey() {
     try { return window.localStorage.getItem("cs.tileKey") || ""; }
@@ -1794,6 +1794,115 @@
       '<p class="note">' + lines.join("<br>") + '</p></div>';
   }
 
+  /* The same report card, built from a RECORD rather than a lookup result.
+
+     Clicking a card used to open a different, thinner panel than searching
+     the same address did — no report card, no score, no save control. Two
+     panels for one thing is how they drift apart, so both now render this. */
+  /* ComEd publishes THREE hosting figures per circuit and they are different
+     numbers. Showing only the one matching the Settings product hid the
+     other two, and a rep looking at a site does not know in advance which
+     product fits it — an empty parcel next to a 750 kW load-side headroom is
+     a data-centre site even when the battery number is small.
+
+       BESS_HC    net LOAD capacity  — a battery both draws and exports, so
+                                       this is the binding one for storage
+       PV_HC_kW   net GENERATION     — solar only exports
+       EV_HC_kW   load side          — a large load only draws
+
+     ComEd's own panel lists all three. So does this. */
+  function productRowsHtml(comed) {
+    if (!comed) return "";
+    function n(v) { var x = parseFloat(v); return isNaN(x) ? null : x; }
+    var bess = n(comed.BESS_HC), pv = n(comed.PV_HC_kW), ev = n(comed.EV_HC_kW);
+    if (bess == null && pv == null && ev == null) return "";
+    return g("Battery \u00b7 net load capacity",
+             bess == null ? "N/A" : "<b>" + fmt(bess) + "</b> kW") +
+           g("Solar \u00b7 net generation",
+             pv == null ? "N/A" : fmt(pv) + " kW") +
+           g("Large load \u00b7 load side",
+             ev == null ? "N/A" : fmt(ev) + " kW");
+  }
+
+  /* Every circuit covering the point, with its own headroom. ComEd's panel
+     lists these because the buffers overlap and the best one is not always
+     the one a line crew can actually reach. */
+  function coveringRowsHtml(rows) {
+    if (!rows || rows.length < 2) return "";
+    var out = "", i, r;
+    for (i = 0; i < rows.length; i++) {
+      r = rows[i];
+      var cap = LAY.capacityOf(r);
+      out += g(esc(r.feeder || "unnamed") + (r.sub ? " \u00b7 " + esc(r.sub) : ""),
+               cap && cap.nameplate != null ? fmt(cap.nameplate) + " kW" : "N/A");
+    }
+    return '<h4 style="margin-top:12px">All circuits covering this point (' +
+      rows.length + ')</h4><div class="grid2">' + out + '</div>' +
+      '<p class="note">The buffers overlap, so several feeders can cover one ' +
+      'parcel. The headline above is the best of them; which you can physically ' +
+      'reach is settled by the interconnection study.</p>';
+  }
+
+  function reportCardForRecord(r) {
+    if (!r.feederId || !r.circ || !r.circ.known) {
+      return '<div class="sec"><h4>Site report card</h4><p class="note">' +
+        'No circuit is attributed to this site yet, so there is nothing to size ' +
+        'a battery against. Zoom to 14+ so circuits resolve, or search the ' +
+        'address to ask ComEd about this exact point.</p></div>';
+    }
+    var st = r.circ;
+    var maxByWire = Math.max(0, Math.round(st.sellable));
+    var maxByLoad = r.peakKw ? Math.round(r.peakKw * 0.15) : null;
+    var maxBess = maxByLoad == null ? maxByWire : Math.min(maxByWire, maxByLoad);
+
+    var h = '<div class="sec"><h4>Site report card</h4>' +
+      '<div class="hero"><div class="big">' + fmt(maxBess) +
+      ' <small>kW</small></div><div class="cap">largest battery this site ' +
+      'supports' + (maxByLoad != null && maxByLoad < maxByWire
+        ? " \u2014 limited by the customer\u2019s peak"
+        : " \u2014 limited by the circuit") + '</div></div>' +
+      '<div class="grid2">' +
+      g("Circuit", esc(r.feederId)) +
+      g("Substation", r.sub ? esc(r.sub) : "N/A") +
+      productRowsHtml(r.comed) +
+      g("ComEd queue on this feeder", fmt(st.queue) + " kW") +
+      g("Queue refreshed", r.queueRefreshed ? esc(String(r.queueRefreshed)) : "N/A") +
+      g("Buffer distance", r.buffFt != null ? fmt(r.buffFt) + " ft" : "N/A") +
+      g("Your team\u2019s firm claims", fmt(st.firm) + " kW") +
+      g("Your team\u2019s soft holds", fmt(st.soft) + " kW") +
+      g("Left to sell", '<b>' + fmt(st.sellable) + ' kW</b>') +
+      g("Ceiling from the wire", fmt(maxByWire) + " kW") +
+      g("Ceiling from the load", maxByLoad == null
+        ? "N/A \u2014 no building load known" : fmt(maxByLoad) + " kW") +
+      g("At 2 hours", fmt(maxBess * 2) + " kWh") +
+      g("Battery deal score", '<b>' + r.score + '</b> / 100') +
+      g("Large load score", '<b>' + r.loadScore + '</b> / 100') +
+      '</div>';
+
+    if (maxByLoad == null) {
+      h += '<p class="note">No building load is known here, so both the size ' +
+        'and the battery score reflect the CIRCUIT only. A real peak usually ' +
+        'lowers them \u2014 the load is normally the smaller of the two ' +
+        'ceilings. Pull a bill or an interval file before quoting.</p>';
+    }
+    h += '</div>';
+    return h;
+  }
+
+  /* Keep or drop this site, from the card's own panel. */
+  function saveRowHtml(r) {
+    var have = isSaved(r.id);
+    return '<div class="sec"><div class="setKeyRow">' +
+      '<button id="dSaveRow" data-id="' + esc(r.id) + '">' +
+      (have ? "Saved \u2713  \u00b7  remove from list" : "Save this site") +
+      '</button></div><p class="note">' +
+      (have ? "Kept in your list and in the CSV export, and it survives a pan " +
+              "and a reload."
+            : "Adds it to your list permanently \u2014 it will survive a pan, a " +
+              "re-search and a reload, and land in the export.") +
+      '</p></div>';
+  }
+
   function meterHtml(st, tall) {
     if (!st.known) {
       return '<div class="meter' + (tall ? ' tall' : '') + '">' +
@@ -2543,7 +2652,13 @@
     function done() {
       if (--pending) return;
       var el = document.getElementById("dVerify");
-      if (el && ST.sel && ST.sel.id === r.id) el.outerHTML = verifyBlock("done", r, live);
+      if (el && ST.sel && ST.sel.id === r.id) {
+        el.outerHTML = verifyBlock("done", r, live) +
+          /* The county's own record for this point, on the card panel too.
+             verifyRecord already fetched it to compare against; showing it
+             costs nothing and it is the half a rep needs for the owner. */
+          parcelBlockHtml(live.parcel);
+      }
     }
     LAY.probePoint(r.lat, r.lon, function (err, res) {
       if (err) { live.circuitErr = err.message; done(); return; }
@@ -2706,8 +2821,12 @@
     h += '<div class="grid2">' +
       g("Circuit", esc(v.feederId)) +
       g("Substation", v.sub ? esc(v.sub) : "N/A") +
-      g("Published capacity", fmt(st.nameplate) + " kW") +
+      productRowsHtml(v.rows && v.rows[0] ? v.rows[0].a : null) +
       g("ComEd queue on this feeder", fmt(st.queue) + " kW") +
+      g("Queue refreshed", (v.rows && v.rows[0] && v.rows[0].refreshed)
+        ? esc(String(v.rows[0].refreshed)) : "N/A") +
+      g("Buffer distance", (v.rows && v.rows[0] && v.rows[0].buff != null)
+        ? fmt(v.rows[0].buff) + " ft" : "N/A") +
       g("Your team\u2019s firm claims", fmt(st.firm) + " kW") +
       g("Your team\u2019s soft holds", fmt(st.soft) + " kW") +
       g("Left to sell", '<b>' + fmt(st.sellable) + ' kW</b>') +
@@ -2754,6 +2873,7 @@
       lines.push("No Illinois Shines projects within a mile of this point.");
     }
 
+    h += coveringRowsHtml(v.rows);
     h += '<h4 style="margin-top:12px">Other interconnections</h4>' +
          '<p class="note">' + lines.join("<br>") + '</p></div>';
     return h;
@@ -2933,6 +3053,11 @@
   function drawerHtml(r) {
     var st = r.circ, sz = r.sz, h = [];
     var live = liveClaims(r);
+
+    /* The report card leads, then the save control, then the detail. A rep
+       opening a card wants the verdict first and the paperwork after. */
+    h.push(reportCardForRecord(r));
+    h.push(saveRowHtml(r));
 
     /* -- headline ------------------------------------------------------- */
     h.push('<div class="sec"><div class="hero">' +
@@ -3161,6 +3286,16 @@
   }
 
   function wireDrawer(r) {
+    /* Save/remove, from the card's own panel. Re-opens so the button label
+       and the list agree immediately. */
+    var sr = document.getElementById("dSaveRow");
+    if (sr) sr.onclick = function () {
+      if (isSaved(r.id)) unsaveSite(r.id);
+      else { ST.saved.unshift(r); persistSaved(); }
+      openDrawer(r);
+      render();
+    };
+
     var save = document.getElementById("rSave");
     var msg = document.getElementById("rMsg");
     function say(t, cls) { msg.textContent = t || ""; msg.className = "msg" + (cls ? " " + cls : ""); }

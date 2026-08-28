@@ -586,7 +586,7 @@
      Shown in Settings and stamped into the diagnostics log. Several rounds of
      debugging have been spent on the question "is the deployed file the one
      we just changed", and a screenshot cannot answer it. Now it can. */
-  var CS_BUILD = "2026-08-28 00:26 UTC";
+  var CS_BUILD = "2026-08-28 00:31 UTC";
 
   function savedTileKey() {
     try { return window.localStorage.getItem("cs.tileKey") || ""; }
@@ -1105,6 +1105,28 @@
   }
 
   function enrich(r) {
+    /* Re-register the circuit before asking the ledger about it.
+
+       The ledger's feeder registry is in-memory: it is populated when a
+       viewport search or a point lookup runs. A SAVED site restored from
+       localStorage after a reload arrives with its own nameplate and queue
+       but the ledger has never heard of its feeder, so feederState() came
+       back `known: false` and the card read "Circuit unknown" while still
+       printing the feeder id underneath — a card that knows which circuit it
+       is on and claims not to know its capacity.
+
+       The record carries the figures ComEd published; hand them back. Only
+       when the ledger has nothing, so a live search always wins over a
+       possibly stale saved copy. */
+    if (r.feederId && r.nameplate != null) {
+      var known = L.getFeeder && L.getFeeder(r.feederId);
+      if (!known || known.nameplate == null) {
+        L.setFeeder(r.feederId, {
+          nameplate: r.nameplate, queue: r.queue || 0, sub: r.sub || ""
+        });
+      }
+    }
+
     var lf = r.loadFactor || EUI_LF[r.type] || 0.5;
     var kwh = r.annualKwh ? r.annualKwh.value : null;
     var peakKw = (kwh && lf) ? (kwh / 8760) / lf : null;
@@ -1641,8 +1663,25 @@
 
     /* Saved sites always list, above whatever the viewport returned, and are
        never filtered out — a rep who deliberately kept an address should not
-       have to remember which filter is hiding it. */
-    var saved = ST.saved.map(function (s) { return enrich(s); });
+       have to remember which filter is hiding it.
+
+       Each is enriched INDIVIDUALLY. A single malformed record used to throw
+       inside the map() and take the whole render with it: the panel kept its
+       previous contents while the header updated, so a new search appeared
+       to do nothing while showing the new circuit's headline above the old
+       card. A record that cannot be enriched is dropped and named, not
+       allowed to silence everything else. */
+    var saved = [], si, sr, broke = [];
+    for (si = 0; si < ST.saved.length; si++) {
+      try {
+        saved.push(enrich(ST.saved[si]));
+      } catch (err) {
+        sr = ST.saved[si];
+        broke.push((sr && sr.addr ? sr.addr : (sr && sr.id) || "a site") +
+                   " \u2014 " + (err && err.message ? err.message : "unknown error"));
+        if (window.console) console.error("clearsky: enrich failed", sr, err);
+      }
+    }
 
     /* GHOSTS. When a viewport search returns nothing the old rows were kept
        — "nothing was returned, so the list below is unchanged" — which was
@@ -1702,7 +1741,28 @@
         : "No circuit in this set has been claimed yet.");
 
     var h = [];
-    for (i = 0; i < rows.length; i++) h.push(cardHtml(rows[i]));
+    for (i = 0; i < rows.length; i++) {
+      /* Per-card, for the same reason as above: one record that cannot be
+         drawn must not blank the list around it. */
+      try {
+        h.push(cardHtml(rows[i]));
+      } catch (err) {
+        broke.push((rows[i] && rows[i].addr ? rows[i].addr : "a card") +
+                   " \u2014 " + (err && err.message ? err.message : "unknown error"));
+        if (window.console) console.error("clearsky: card failed", rows[i], err);
+      }
+    }
+    /* A record that could not be built is REPORTED, not silently missing.
+       A card that vanishes without explanation is how a search appears to do
+       nothing while the header shows a new circuit. */
+    if (broke.length) {
+      h.unshift('<div class="empty" style="text-align:left;border:1px solid var(--red)">' +
+        '<h3 style="color:var(--red)">' + broke.length +
+        (broke.length === 1 ? " site could not be shown" : " sites could not be shown") +
+        '</h3><p><small>' + broke.map(esc).join("<br>") + '</small></p>' +
+        '<p>The rest of the list is unaffected. Send this message on \u2014 it names ' +
+        'the record and the reason.</p></div>');
+    }
     wrap.innerHTML = h.join("");
     drawMarkers(rows);
   }

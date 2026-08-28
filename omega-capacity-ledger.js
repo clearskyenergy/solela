@@ -58,7 +58,7 @@
   var FEEDERS = {};   /* feederId -> {id, sub, nameplate, queue, county, updatedAt} */
   var ALLOCS  = {};   /* allocId  -> allocation record                             */
   var LISTEN  = [];
-  var DB = null, ORG = "", UNSUB = null;
+  var DB = null, ORG = "", UNSUB = null, UNSUB_CAP = null;
 
   function now() { return Date.now(); }
   function num(v) { var x = parseFloat(v); return isNaN(x) ? null : x; }
@@ -74,6 +74,81 @@
      capacity already spoken for by OTHER developers' pending interconnection
      applications — it is not ours and never was, and a tool that shows
      nameplate as "available" will sell it twice a week. */
+  /* ══════════════════════════════════════════════════════════════════════
+     THE FEEDER REGISTRY IS DATA, NOT A CACHE
+
+     What ComEd publishes for a circuit — nameplate, queue, substation — was
+     held in memory only. Reload the page and the whole circuit ledger emptied:
+     "6 circuits touched" became zero, and every saved site printed its own
+     feeder id above the words "Circuit capacity unknown".
+
+     It is worth persisting for a second reason. A rep who has looked at
+     D5017 has learned something the rest of the team does not have to spend
+     a request finding out again, and on a tool used across several states
+     that adds up. So the registry is written locally on every change and,
+     when the ledger is attached, shared through Firestore alongside the
+     claims.
+
+     FRESHNESS IS TRACKED, because ComEd revises these quarterly. A stored
+     figure carries when it was read, and a live read always wins over a
+     stored one — a saved June capacity must never overwrite September's.
+     ══════════════════════════════════════════════════════════════════════ */
+  var FEEDER_KEY = "cs.feeders";
+  var feederSaveTimer = null;
+
+  function loadFeeders() {
+    try {
+      var raw = (typeof localStorage !== "undefined") && localStorage.getItem(FEEDER_KEY);
+      if (!raw) return;
+      var j = JSON.parse(raw), id;
+      for (id in j) {
+        if (!j.hasOwnProperty(id)) continue;
+        if (j[id] && j[id].nameplate != null) FEEDERS[id] = j[id];
+      }
+    } catch (e) { /* corrupt or unavailable — start empty rather than throw */ }
+  }
+
+  function saveFeeders() {
+    /* Debounced. A viewport sweep can register a hundred feeders in a
+       second and serialising on each one would stall the map. */
+    if (feederSaveTimer) return;
+    feederSaveTimer = setTimeout(function () {
+      feederSaveTimer = null;
+      try {
+        if (typeof localStorage !== "undefined")
+          localStorage.setItem(FEEDER_KEY, JSON.stringify(FEEDERS));
+      } catch (e) { /* quota or private mode; the session still works */ }
+      pushFeeders();
+    }, 400);
+  }
+
+  /* Share what we have learned, when there is somewhere to share it. */
+  function pushFeeders() {
+    if (!DB || !ORG) return;
+    var id, f, batch;
+    try { batch = DB.batch(); } catch (e) { return; }
+    var n = 0;
+    for (id in FEEDERS) {
+      if (!FEEDERS.hasOwnProperty(id)) continue;
+      f = FEEDERS[id];
+      if (f.nameplate == null || f.pushed) continue;
+      try {
+        batch.set(DB.collection("circuitCapacity").doc(ORG + "__" + id), {
+          orgId: ORG, feederId: id, sub: f.sub || "", county: f.county || "",
+          nameplate: f.nameplate, queue: f.queue || 0,
+          readAt: f.updatedAt || now()
+        }, { merge: true });
+        f.pushed = true;
+        n++;
+      } catch (e) { return; }
+      if (n >= 400) break;      /* Firestore caps a batch at 500 writes */
+    }
+    if (n) { try { batch.commit(); } catch (e) {} }
+  }
+
+  /* Restore what this browser already knew, before anything asks. */
+  loadFeeders();
+
   L.setFeeder = function (id, o) {
     if (!id) return null;
     id = String(id);
@@ -85,7 +160,10 @@
       if (o.county)            f.county    = String(o.county);
     }
     f.updatedAt = now();
+    /* A changed figure has to be shared again. */
+    f.pushed = false;
     FEEDERS[id] = f;
+    saveFeeders();
     return f;
   };
   L.getFeeder = function (id) { return id ? FEEDERS[String(id)] || null : null; };
@@ -347,6 +425,34 @@
     DB = db || null; ORG = orgId || "";
     if (!DB || !ORG) { cb(new Error("Ledger is running locally — claims are not shared.")); return; }
     if (UNSUB) { try { UNSUB(); } catch (e) {} UNSUB = null; }
+    if (UNSUB_CAP) { try { UNSUB_CAP(); } catch (e) {} UNSUB_CAP = null; }
+
+    /* What the rest of the team has read about circuits. Merged in, never
+       overwriting a figure this session read live — the local one is at
+       worst as fresh, and at best fresher. */
+    try {
+      UNSUB_CAP = DB.collection("circuitCapacity").where("orgId", "==", ORG)
+        .onSnapshot(function (snap) {
+          var changed = false;
+          snap.forEach(function (d) {
+            var v = d.data();
+            if (!v || !v.feederId || v.nameplate == null) return;
+            var have = FEEDERS[String(v.feederId)];
+            if (have && have.updatedAt && v.readAt && have.updatedAt >= v.readAt) return;
+            FEEDERS[String(v.feederId)] = {
+              id: String(v.feederId), sub: v.sub || "", county: v.county || "",
+              nameplate: v.nameplate, queue: v.queue || 0,
+              updatedAt: v.readAt || now(), pushed: true
+            };
+            changed = true;
+          });
+          if (changed) emit();
+        }, function () { /* a rules rejection here must not break claims */ });
+    } catch (e) {}
+
+    /* Anything learned before signing in goes up now. */
+    setTimeout(pushFeeders, 0);
+
     var first = true;
     UNSUB = DB.collection("capacityAllocations").where("orgId", "==", ORG)
       .onSnapshot(function (snap) {

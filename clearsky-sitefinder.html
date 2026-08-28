@@ -522,6 +522,45 @@
     </section>
 
     <section>
+      <h5>Import a property list</h5>
+      <p>Upload a CSV exported from PropertyShark, Reonomy, CoStar, Crexi or a
+         spreadsheet. Columns are matched by name &mdash; address, city, ZIP,
+         owner, phone, email, building size, lot acres, year built, class, and
+         latitude/longitude if you have them. Every imported site is scored
+         and joined to its circuit like any other.</p>
+      <div class="setKeyRow">
+        <input type="file" id="setImportFile" accept=".csv,text/csv" style="flex:1">
+      </div>
+      <p id="setImportMsg" class="setKeyMsg"></p>
+      <div id="setImportMap" class="diagBox" hidden></div>
+      <div class="setKeyRow" id="setImportActions" hidden>
+        <button id="setImportGo">Import these</button>
+        <button id="setImportCancel" style="background:var(--panel2);color:var(--ink)">Cancel</button>
+      </div>
+      <p id="setImportHave" class="setKeyMsg"></p>
+      <div class="setKeyRow">
+        <button id="setImportGeo" style="background:var(--panel2);color:var(--ink)">Geocode missing coordinates</button>
+        <button id="setImportClear" style="background:var(--panel2);color:var(--ink)">Remove imported</button>
+      </div>
+      <p><em>Rows without coordinates cannot be placed on the map or matched
+         to a circuit until they are geocoded. That runs against the US Census
+         geocoder, a few per second, and you can watch it finish.</em></p>
+    </section>
+
+    <section>
+      <h5>What makes a good site</h5>
+      <p>The weights behind the two scores. Change them and every card
+         re-scores immediately. They are points out of 100 &mdash; the battery
+         score and the large-load score are kept separate because a site can
+         be strong as one and worthless as the other.</p>
+      <div id="setWeights"></div>
+      <div class="setKeyRow">
+        <button id="setWeightsReset" style="background:var(--panel2);color:var(--ink)">Reset to defaults</button>
+      </div>
+      <p id="setWeightsMsg" class="setKeyMsg"></p>
+    </section>
+
+    <section>
       <h5>Property source</h5>
       <select id="setSrc"></select>
       <p id="setSrcNote"></p>
@@ -568,6 +607,9 @@
     current: null,
     /* Records the rep has dismissed. Persisted, reversible in Settings. */
     hidden: [],
+    /* Sites uploaded from a CSV. Persisted, and treated exactly like any
+       other record once they have coordinates. */
+    imported: [],
     byId: {},
     view: "split",
     sel: null,
@@ -614,7 +656,7 @@
      Shown in Settings and stamped into the diagnostics log. Several rounds of
      debugging have been spent on the question "is the deployed file the one
      we just changed", and a screenshot cannot answer it. Now it can. */
-  var CS_BUILD = "2026-08-28 00:45 UTC";
+  var CS_BUILD = "2026-08-28 11:49 UTC";
 
   function savedTileKey() {
     try { return window.localStorage.getItem("cs.tileKey") || ""; }
@@ -1230,18 +1272,94 @@
      the layer-75 fetch, some parcels in view silently have no circuit, and
      the ones that do are still correct. Nothing is scaled down for that; it
      is surfaced in the header instead. */
+  /* ══════════════════════════════════════════════════════════════════════
+     WHAT MAKES A GOOD SITE
+
+     These weights were hardcoded, which meant the tool's opinion of a good
+     site was mine rather than the team's. They are points out of 100 and
+     they are editable in Settings.
+
+     `cap` is the value at which a component earns full marks — 1,200 kW
+     deliverable scores the whole 45 by default. Raising a cap makes the
+     score harsher; lowering it makes more sites look good. That is a
+     commercial judgement, not a technical one, which is exactly why it
+     belongs in the hands of whoever owns the pipeline.
+     ══════════════════════════════════════════════════════════════════════ */
+  var WEIGHT_DEFAULTS = {
+    battery: {
+      deliverable:  { pts: 45, cap: 1200, label: "Deliverable kW now",
+                      note: "After ComEd's queue and your team's claims." },
+      peak:         { pts: 20, cap: 2000, label: "Customer's peak load",
+                      note: "What there is to shave. Needs a building." },
+      headroom:     { pts: 15, cap: 4000, label: "Room left on the circuit",
+                      note: "Space to grow, or to sell a second site." },
+      notCapped:    { pts: 10, cap: 0,    label: "Load binds, not the wire",
+                      note: "Awarded when the circuit is not the constraint." },
+      useType:      { pts: 10, cap: 0,    label: "Industrial use class",
+                      note: "Warehouse, industrial, manufacturing, cold storage, flex." }
+    },
+    load: {
+      headroom:     { pts: 55, cap: 10000, label: "Raw headroom on the circuit",
+                      note: "A large load only draws. Megawatts are the point." },
+      land:         { pts: 20, cap: 20,    label: "Lot acreage",
+                      note: "Room to build. The existing building may be demolished." },
+      useType:      { pts: 15, cap: 0,     label: "Industrial or vacant land",
+                      note: "Zoning that will accept a large load." },
+      service:      { pts: 10, cap: 0,     label: "Existing large service",
+                      note: "1 MVA or more already at the site." }
+    },
+    modelledPenalty: 0.85
+  };
+
+  function loadWeights() {
+    try {
+      var raw = window.localStorage.getItem("cs.scoreWeights");
+      if (!raw) return JSON.parse(JSON.stringify(WEIGHT_DEFAULTS));
+      var w = JSON.parse(raw), k, g;
+      /* Merge over the defaults so a weight added in a later build does not
+         vanish for anyone who has saved settings. */
+      var out = JSON.parse(JSON.stringify(WEIGHT_DEFAULTS));
+      for (g in out) {
+        if (g === "modelledPenalty") { if (w[g] != null) out[g] = w[g]; continue; }
+        for (k in out[g]) {
+          if (w[g] && w[g][k]) {
+            if (w[g][k].pts != null) out[g][k].pts = +w[g][k].pts;
+            if (w[g][k].cap != null) out[g][k].cap = +w[g][k].cap;
+          }
+        }
+      }
+      return out;
+    } catch (e) { return JSON.parse(JSON.stringify(WEIGHT_DEFAULTS)); }
+  }
+  function persistWeights() {
+    try { window.localStorage.setItem("cs.scoreWeights", JSON.stringify(WEIGHTS)); }
+    catch (e) {}
+  }
+  var WEIGHTS = loadWeights();
+
   function grainFactor() { return 1; }
 
   function score(r) {
-    var s = 0;
-    s += Math.min((r.sz.kw || 0) / 1200, 1) * 45;              /* deliverable now  */
-    s += Math.min((r.peakKw || 0) / 2000, 1) * 20;             /* customer's peak  */
-    s += Math.min((r.circ.sellable || 0) / 4000, 1) * 15;      /* room to grow     */
-    s += r.sz.circuitLimited ? 0 : 10;                          /* not wire-capped  */
-    s += /Warehouse|Industrial|Manufacturing|Cold Storage|Flex/.test(r.type) ? 10 : 3;
+    var W = WEIGHTS.battery, s = 0;
+    s += Math.min((r.sz.kw || 0) / W.deliverable.cap, 1) * W.deliverable.pts;
+    s += Math.min((r.peakKw || 0) / W.peak.cap, 1) * W.peak.pts;
+    s += Math.min((r.circ.sellable || 0) / W.headroom.cap, 1) * W.headroom.pts;
+    s += r.sz.circuitLimited ? 0 : W.notCapped.pts;
+    s += /Warehouse|Industrial|Manufacturing|Cold Storage|Flex/.test(r.type)
+           ? W.useType.pts : Math.round(W.useType.pts * 0.3);
     /* A modelled load is a guess and a metered one is a measurement. Scoring
        them identically is how an estimate gets quoted as a reading. */
-    if (r.annualKwh && r.annualKwh.src !== "metered") s *= 0.85;
+    if (r.annualKwh && r.annualKwh.src !== "metered") s *= WEIGHTS.modelledPenalty;
+    return Math.round(s * r.grainFactor);
+  }
+
+  function loadScore(r) {
+    var W = WEIGHTS.load, s = 0;
+    s += Math.min((r.circ.sellable || 0) / W.headroom.cap, 1) * W.headroom.pts;
+    s += Math.min((r.lotAcres || 0) / W.land.cap, 1) * W.land.pts;
+    s += /Industrial|Manufacturing|Vacant Land|Flex/.test(r.type)
+           ? W.useType.pts : Math.round(W.useType.pts * 0.27);
+    s += (r.service && r.service.kva >= 1000) ? W.service.pts : 0;
     return Math.round(s * r.grainFactor);
   }
 
@@ -1254,19 +1372,6 @@
      industrial parcel scores near zero as a battery deal and near the top as
      a site to build on. Collapsing them into one number hides whichever the
      rep is not currently looking for. */
-  function loadScore(r) {
-    var s = 0;
-    /* Raw headroom is most of it. 10 MW is a full mark. */
-    s += Math.min((r.circ.sellable || 0) / 10000, 1) * 55;
-    /* Land to build on. Acreage, not building area — the building is often
-       the thing you would demolish. */
-    s += Math.min((r.lotAcres || 0) / 20, 1) * 20;
-    s += /Industrial|Manufacturing|Vacant Land|Flex/.test(r.type) ? 15 : 4;
-    /* An existing large service means the site is already built for load. */
-    s += (r.service && r.service.kva >= 1000) ? 10 : 0;
-    return Math.round(s * r.grainFactor);
-  }
-
   /* ══════════════════════════════════════════════════════════════════════
      SETTINGS
 
@@ -1450,6 +1555,189 @@
     };
     document.getElementById("setOpen").addEventListener("click", paintHidden);
     paintHidden();
+
+    /* ---- import a property list ------------------------------------- */
+    function importHave() {
+      var el = document.getElementById("setImportHave");
+      var n = ST.imported.length;
+      var unplaced = ST.imported.filter(function (r) { return r.lat == null; }).length;
+      el.textContent = n
+        ? n + " imported site" + (n === 1 ? "" : "s") +
+          (unplaced ? ", " + unplaced + " still without coordinates." : ", all placed.")
+        : "Nothing imported yet.";
+      document.getElementById("setImportGeo").disabled = !unplaced;
+      document.getElementById("setImportClear").disabled = !n;
+    }
+    importHave();
+
+    document.getElementById("setImportFile").onchange = function () {
+      var f = this.files && this.files[0];
+      var msg = document.getElementById("setImportMsg");
+      var box = document.getElementById("setImportMap");
+      var acts = document.getElementById("setImportActions");
+      if (!f) return;
+      var rd = new FileReader();
+      rd.onload = function () {
+        var rows = parseCsv(rd.result);
+        if (rows.length < 2) {
+          msg.className = "setKeyMsg bad";
+          msg.textContent = "That file has no data rows.";
+          return;
+        }
+        var header = rows[0], map = matchColumns(header);
+        IMPORT_PENDING = { header: header, map: map, rows: rows };
+        box.hidden = false;
+        box.textContent = describeMapping(header, map, rows.length - 1);
+        acts.hidden = false;
+        if (map.addr == null) {
+          msg.className = "setKeyMsg bad";
+          msg.textContent = "No address column found. Nothing can be imported without one.";
+        } else {
+          msg.className = "setKeyMsg";
+          msg.textContent = "Check the column matching below before importing. " +
+            "A wrong column does not look wrong \u2014 it looks like data.";
+        }
+      };
+      rd.readAsText(f);
+    };
+
+    document.getElementById("setImportCancel").onclick = function () {
+      IMPORT_PENDING = null;
+      document.getElementById("setImportMap").hidden = true;
+      document.getElementById("setImportActions").hidden = true;
+      document.getElementById("setImportMsg").textContent = "";
+      document.getElementById("setImportFile").value = "";
+    };
+
+    document.getElementById("setImportGo").onclick = function () {
+      if (!IMPORT_PENDING || IMPORT_PENDING.map.addr == null) return;
+      var recs = rowsToRecords(IMPORT_PENDING.header, IMPORT_PENDING.map, IMPORT_PENDING.rows);
+      var have = {}, i;
+      for (i = 0; i < ST.imported.length; i++) have[ST.imported[i].id] = i;
+      var added = 0, updated = 0;
+      for (i = 0; i < recs.length; i++) {
+        if (have[recs[i].id] != null) { ST.imported[have[recs[i].id]] = recs[i]; updated++; }
+        else { ST.imported.push(recs[i]); added++; }
+      }
+      var okStore = persistImported();
+      var msg = document.getElementById("setImportMsg");
+      msg.className = okStore ? "setKeyMsg good" : "setKeyMsg bad";
+      msg.textContent = added + " added, " + updated + " updated." +
+        (okStore ? "" : " TOO BIG FOR BROWSER STORAGE \u2014 they are loaded for this " +
+          "session but will not survive a reload. Import a smaller slice, or a " +
+          "county at a time.");
+      document.getElementById("setImportMap").hidden = true;
+      document.getElementById("setImportActions").hidden = true;
+      document.getElementById("setImportFile").value = "";
+      IMPORT_PENDING = null;
+      importHave();
+      render();
+    };
+
+    document.getElementById("setImportClear").onclick = function () {
+      if (!window.confirm("Remove all imported sites? Starred ones stay starred.")) return;
+      ST.imported = [];
+      persistImported();
+      importHave();
+      render();
+    };
+
+    /* Geocoding is explicit and paced. Census is the authority for US street
+       addresses, has no published rate cap, and returns a rooftop rather than
+       an interpolation — but a thousand requests as fast as the browser can
+       issue them is still rude, and the search box shares the connection. */
+    document.getElementById("setImportGeo").onclick = function () {
+      var btn = this;
+      var todo = ST.imported.filter(function (r) { return r.lat == null && r.addr; });
+      if (!todo.length) return;
+      var msg = document.getElementById("setImportMsg");
+      var done = 0, hit = 0, k = 0, active = 0, LIMIT = 3;
+      btn.disabled = true;
+      (function pump() {
+        while (active < LIMIT && k < todo.length) {
+          (function (r) {
+            active++;
+            geocodeOne(r.addr, r.city, r.zip, function (g) {
+              active--; done++;
+              if (g) { r.lat = g.lat; r.lon = g.lon; r.geoSrc = g.src;
+                       r.geoInterp = !!g.interpolated; hit++; }
+              msg.className = "setKeyMsg";
+              msg.textContent = "Geocoding " + done + " of " + todo.length +
+                " \u2014 " + hit + " placed.";
+              if (done >= todo.length) {
+                persistImported(); importHave(); render();
+                msg.className = "setKeyMsg good";
+                msg.textContent = hit + " of " + todo.length + " placed on the map." +
+                  (hit < todo.length
+                    ? " The rest could not be resolved and stay unplaced rather than " +
+                      "being guessed at." : "");
+                btn.disabled = false;
+              } else pump();
+            }, true);
+          })(todo[k++]);
+        }
+      })();
+    };
+
+    /* ---- score weights ----------------------------------------------- */
+    function paintWeights() {
+      var wrap = document.getElementById("setWeights");
+      var html = "", g, k, w;
+      var titles = { battery: "Battery deal score", load: "Large load score" };
+      for (g in titles) {
+        html += '<h5 style="margin:10px 0 4px">' + titles[g] + '</h5>';
+        var total = 0;
+        for (k in WEIGHTS[g]) total += +WEIGHTS[g][k].pts || 0;
+        for (k in WEIGHTS[g]) {
+          w = WEIGHTS[g][k];
+          html += '<div style="margin:7px 0">' +
+            '<div style="display:flex;gap:8px;align-items:center">' +
+            '<label style="flex:1;font-size:12.5px">' + esc(w.label) + '</label>' +
+            '<input type="number" min="0" max="100" step="1" value="' + w.pts +
+              '" data-wg="' + g + '" data-wk="' + k + '" data-wf="pts" ' +
+              'style="width:62px" title="points">' +
+            (w.cap ? '<input type="number" min="1" step="1" value="' + w.cap +
+              '" data-wg="' + g + '" data-wk="' + k + '" data-wf="cap" ' +
+              'style="width:86px" title="value that earns full points">' : '<span style="width:86px"></span>') +
+            '</div><div class="setKeyMsg">' + esc(w.note) + '</div></div>';
+        }
+        html += '<div class="setKeyMsg' + (total === 100 ? " good" : " bad") + '">' +
+          'Total ' + total + ' points.' +
+          (total === 100 ? "" : " Not 100 \u2014 scores will not be out of 100, " +
+            "which makes them hard to compare against a target.") + '</div>';
+      }
+      html += '<div style="margin:10px 0"><div style="display:flex;gap:8px;align-items:center">' +
+        '<label style="flex:1;font-size:12.5px">Modelled-load penalty</label>' +
+        '<input type="number" min="0" max="1" step="0.05" value="' + WEIGHTS.modelledPenalty +
+        '" data-wg="modelledPenalty" style="width:62px"></div>' +
+        '<div class="setKeyMsg">A modelled consumption figure is a guess and a metered ' +
+        'one is a measurement. 1 would score them identically.</div></div>';
+      wrap.innerHTML = html;
+
+      var ins = wrap.querySelectorAll("input[data-wg]");
+      for (var i = 0; i < ins.length; i++) {
+        ins[i].onchange = function () {
+          var g = this.getAttribute("data-wg"), k = this.getAttribute("data-wk"),
+              f = this.getAttribute("data-wf"), v = parseFloat(this.value);
+          if (isNaN(v)) return;
+          if (g === "modelledPenalty") WEIGHTS.modelledPenalty = v;
+          else WEIGHTS[g][k][f] = v;
+          persistWeights();
+          paintWeights();
+          render();
+          document.getElementById("setWeightsMsg").className = "setKeyMsg good";
+          document.getElementById("setWeightsMsg").textContent =
+            "Saved. Every card re-scored.";
+        };
+      }
+    }
+    document.getElementById("setWeightsReset").onclick = function () {
+      WEIGHTS = JSON.parse(JSON.stringify(WEIGHT_DEFAULTS));
+      persistWeights(); paintWeights(); render();
+      document.getElementById("setWeightsMsg").className = "setKeyMsg";
+      document.getElementById("setWeightsMsg").textContent = "Back to defaults.";
+    };
+    paintWeights();
 
     document.getElementById("setBuild").textContent = CS_BUILD;
     document.getElementById("setDiagRefresh").onclick = paintDiag;
@@ -1812,6 +2100,184 @@
 
      So the whole thing is wrapped. A failure now produces a visible message
      naming the error instead of a panel that looks fine and is wrong. */
+  /* ══════════════════════════════════════════════════════════════════════
+     IMPORTING A PROPERTY LIST
+
+     A CSV from PropertyShark, Reonomy, CoStar, Crexi or a spreadsheet. This
+     is the manual path to a property database while the vendor APIs are a
+     commercial conversation rather than a technical one.
+
+     TWO RULES CARRY THE WEIGHT HERE, both learned the hard way tonight:
+
+       1. THE COLUMN MAPPING IS SHOWN BEFORE ANYTHING IS IMPORTED. A wrong
+          column does not look wrong — it looks like data. Matching "owner"
+          to a mailing address or "address" to a billing address produces a
+          list a rep works for a week before noticing.
+
+       2. GEOCODING IS NEVER AUTOMATIC AND NEVER IN BULK ON LOAD. Firing a
+          thousand addresses at a geocoder gets the whole origin rate-limited
+          and breaks the search box for everyone. Rows without coordinates
+          import as unplaced and are geocoded on an explicit button, in
+          batches, with visible progress.
+     ══════════════════════════════════════════════════════════════════════ */
+  function parseCsv(text) {
+    /* Quote-aware. A one-line split on commas mangles any row containing an
+       address with a comma in it, which is most of them. */
+    var rows = [], row = [], cell = "", q = false, i, c, n;
+    text = String(text).replace(/^\uFEFF/, "");   /* strip BOM */
+    for (i = 0; i < text.length; i++) {
+      c = text.charAt(i); n = text.charAt(i + 1);
+      if (q) {
+        if (c === '"' && n === '"') { cell += '"'; i++; }
+        else if (c === '"') q = false;
+        else cell += c;
+      } else if (c === '"') q = true;
+      else if (c === ",") { row.push(cell); cell = ""; }
+      else if (c === "\n") { row.push(cell); rows.push(row); row = []; cell = ""; }
+      else if (c !== "\r") cell += c;
+    }
+    if (cell.length || row.length) { row.push(cell); rows.push(row); }
+    return rows.filter(function (r) {
+      return r.length > 1 || (r[0] || "").trim() !== "";
+    });
+  }
+
+  /* Column patterns. Deliberately ordered: the SITE address must win over a
+     mailing or billing address, because on industrial land the bill goes to
+     an agent in another state and a rep sent there has wasted a day. */
+  var IMPORT_COLS = [
+    ["lat",    [/^lat(itude)?$/i, /^y$/i]],
+    ["lon",    [/^lon(g|gitude)?$/i, /^x$/i]],
+    ["addr",   [/^(site|situs|property|prop)[_ ]?addr(ess)?/i, /^address[_ ]?1?$/i,
+                /^street[_ ]?address$/i, /^full[_ ]?address$/i, /^addr$/i, /^address$/i]],
+    ["city",   [/^(site|property|prop)[_ ]?city$/i, /^city$/i, /^municipality$/i]],
+    ["zip",    [/^(site|property)?[_ ]?zip(code)?$/i, /^postal/i]],
+    ["owner",  [/^owner[_ ]?(name|1)?$/i, /^ownername$/i, /^taxpayer[_ ]?name$/i,
+                /^deed[_ ]?holder$/i, /^landlord$/i]],
+    ["phone",  [/^(owner[_ ]?)?phone/i, /^tel(ephone)?$/i, /^contact[_ ]?phone/i]],
+    ["email",  [/^(owner[_ ]?)?e-?mail/i, /^contact[_ ]?e-?mail/i]],
+    ["contact",[/^contact[_ ]?name$/i, /^broker$/i, /^agent$/i]],
+    ["sqft",   [/^(building|bldg|gross|rentable|improvement)[_ ]?(sq[_ ]?ft|sf|size|area)$/i,
+                /^sq[_ ]?ft$/i, /^sf$/i, /^building[_ ]?size$/i]],
+    ["acres",  [/^(lot[_ ]?)?acre(s|age)?$/i, /^land[_ ]?(size|area)$/i]],
+    ["year",   [/^year[_ ]?built$/i, /^yr[_ ]?blt$/i, /^built$/i]],
+    ["cls",    [/^(property[_ ]?)?(class|type|use)([_ ]?code)?$/i, /^land[_ ]?use$/i]],
+    ["pin",    [/^(pin|apn|parcel[_ ]?(id|no|number))$/i, /^tax[_ ]?id$/i]],
+    ["value",  [/^(assessed|market|total)[_ ]?value$/i, /^assessment$/i]]
+  ];
+
+  /* Anything matching these is REFUSED for the address and owner roles. */
+  var IMPORT_DENY = /^(mail(ing)?|bill(ing)?|tax|owner)[_ ]?addr/i;
+
+  function matchColumns(header) {
+    var map = {}, used = {}, ci, hi, name, pats, h;
+    for (ci = 0; ci < IMPORT_COLS.length; ci++) {
+      name = IMPORT_COLS[ci][0]; pats = IMPORT_COLS[ci][1];
+      for (var pi = 0; pi < pats.length && map[name] == null; pi++) {
+        for (hi = 0; hi < header.length; hi++) {
+          h = String(header[hi] || "").trim();
+          if (used[hi] || !h) continue;
+          if (name === "addr" && IMPORT_DENY.test(h)) continue;
+          if (pats[pi].test(h)) { map[name] = hi; used[hi] = 1; break; }
+        }
+      }
+    }
+    return map;
+  }
+
+  var IMPORT_PENDING = null;
+
+  function describeMapping(header, map, nRows) {
+    var out = "", k, i;
+    for (i = 0; i < IMPORT_COLS.length; i++) {
+      k = IMPORT_COLS[i][0];
+      out += k + ": " + (map[k] == null ? "— not found —" : header[map[k]]) + "\n";
+    }
+    var unmatched = [];
+    for (i = 0; i < header.length; i++) {
+      var taken = false, kk;
+      for (kk in map) if (map[kk] === i) taken = true;
+      if (!taken && String(header[i] || "").trim()) unmatched.push(header[i]);
+    }
+    return nRows + " rows.\n\n" + out +
+      (unmatched.length ? "\nIgnored columns: " + unmatched.join(", ") : "");
+  }
+
+  function num(v) { var x = parseFloat(String(v).replace(/[^0-9.\-]/g, "")); return isNaN(x) ? null : x; }
+
+  function rowsToRecords(header, map, rows) {
+    var out = [], i, r, lat, lon, addr;
+    for (i = 1; i < rows.length; i++) {
+      r = rows[i];
+      addr = map.addr == null ? "" : String(r[map.addr] || "").trim();
+      if (!addr) continue;
+      lat = map.lat == null ? null : num(r[map.lat]);
+      lon = map.lon == null ? null : num(r[map.lon]);
+      out.push({
+        id: "imp:" + (map.pin != null && r[map.pin] ? String(r[map.pin]).trim()
+                      : addr.toUpperCase().replace(/\s+/g, " ")),
+        addr: addr,
+        city: map.city == null ? "" : String(r[map.city] || "").trim(),
+        state: "IL",
+        zip: map.zip == null ? "" : String(r[map.zip] || "").trim(),
+        lat: lat, lon: lon,
+        pin: map.pin == null ? "" : String(r[map.pin] || "").trim(),
+        sqft: map.sqft == null ? null : num(r[map.sqft]),
+        lotAcres: map.acres == null ? null : num(r[map.acres]),
+        yearBuilt: map.year == null ? null : num(r[map.year]),
+        assessedValue: map.value == null ? null : num(r[map.value]),
+        clsLabel: map.cls == null ? "" : String(r[map.cls] || "").trim(),
+        cls: map.cls == null ? "" : String(r[map.cls] || "").trim(),
+        type: typeFromClass(map.cls == null ? "" : String(r[map.cls] || "")),
+        subtype: "Imported list",
+        owner: {
+          name: map.owner == null ? "" : String(r[map.owner] || "").trim(),
+          phone: map.phone == null ? "" : String(r[map.phone] || "").trim(),
+          email: map.email == null ? "" : String(r[map.email] || "").trim(),
+          mailing: ""
+        },
+        ownerOfRecord: map.owner == null ? "" : String(r[map.owner] || "").trim(),
+        listingContact: map.contact == null ? null
+          : { name: String(r[map.contact] || "").trim(), org: "", phone: "", email: "" },
+        lastSale: { date: "", price: null },
+        annualKwh: null, photos: [],
+        feederId: null, sub: "", nameplate: null, queue: 0,
+        src: "import", importedAt: new Date().toISOString()
+      });
+    }
+    return out;
+  }
+
+  function typeFromClass(s) {
+    s = String(s || "");
+    if (/warehouse|distribution|logistic/i.test(s)) return "Warehouse";
+    if (/cold|refriger|freezer/i.test(s)) return "Cold Storage";
+    if (/manufact|industrial|factory|plant/i.test(s)) return "Manufacturing";
+    if (/flex/i.test(s)) return "Flex";
+    if (/office/i.test(s)) return "Office";
+    if (/retail|store|shopping/i.test(s)) return "Retail";
+    if (/data ?cent/i.test(s)) return "Data Center";
+    if (/vacant|land/i.test(s)) return "Vacant Land";
+    return s ? "Industrial" : "Imported site";
+  }
+
+  function loadImported() {
+    try {
+      var raw = window.localStorage.getItem("cs.importedSites");
+      return raw ? JSON.parse(raw) : [];
+    } catch (e) { return []; }
+  }
+  function persistImported() {
+    try {
+      window.localStorage.setItem("cs.importedSites", JSON.stringify(ST.imported));
+      return true;
+    } catch (e) {
+      /* Browser storage caps at about 5 MB. A big export will not fit, and
+         silently dropping half of it would be worse than saying so. */
+      return false;
+    }
+  }
+
   function render() {
     try {
       renderInner();
@@ -1883,9 +2349,22 @@
     /* The Starred view is the same cards, restricted to what the rep kept,
        and NOT restricted by the viewport — the whole point of starring a
        site is being able to come back to it from anywhere on the map. */
+    /* Imported sites behave like harvested ones: viewport-filtered, so a
+       thousand-row list does not fill the panel when you are looking at one
+       corridor. Rows with no coordinates yet are held back entirely — an
+       unplaced site cannot be matched to a circuit and would score as if it
+       had none. */
+    var imported = [], ii;
+    for (ii = 0; ii < ST.imported.length; ii++) {
+      var im = ST.imported[ii];
+      if (im.lat == null || im.lon == null) continue;
+      if (isHidden(im.id) || isSaved(im.id)) continue;
+      if (!vb.contains([im.lat, im.lon])) continue;
+      try { imported.push(enrich(im)); } catch (e) {}
+    }
     rows = (ST.view === "saved")
       ? saved
-      : (current ? [current] : []).concat(saved, rows);
+      : (current ? [current] : []).concat(saved, imported, rows);
     /* Index everything on screen so the star can find a record by id
        whether it came from the viewport or the saved list. */
     for (si = 0; si < rows.length; si++) ST.byId[rows[si].id] = rows[si];
@@ -4020,6 +4499,7 @@
      later — the gap is what makes people think the work was lost. */
   ST.saved = loadSaved();
   ST.hidden = loadHidden();
+  ST.imported = loadImported();
   wireSettings();
   wireLayers();
   render();

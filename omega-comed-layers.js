@@ -754,6 +754,81 @@
     });
   };
 
+  /* WHERE THIS TOOL HAS A UTILITY MAP AT ALL.
+
+     Everything in this file is ComEd's northern-Illinois footprint. A point
+     outside it is not a site with an unknown circuit — it is a site this
+     tool has no utility data for, and saying "circuit unknown" invites a rep
+     to go looking for a circuit that was never going to be here.
+
+     Kept as one function so that adding a second utility means adding a
+     bounding box here rather than hunting for inline coordinates. The
+     current box is deliberately generous; ComEd's real boundary is
+     irregular, and a point just outside it should read as "not mapped"
+     rather than as an error. */
+  /* Seeded from utilities.json when it is loaded; ComEd alone until then, so
+     the tool works on first paint rather than waiting on a fetch. The
+     boxes OVERLAP and are wrong at the edges — they are a coarse stand-in
+     until the HIFLD/EIA retail service territory polygons are wired, which
+     is the thing that actually answers "whose wire is this" nationally. */
+  M.TERRITORIES = [
+    { key: "comed", name: "ComEd", utility: "Commonwealth Edison",
+      hasMap: true, s: 40.6, n: 42.6, w: -89.5, e: -87.4 }
+  ];
+
+  /* Load the national registry. Optional: absent, the tool is ComEd-only and
+     says so, which is exactly what it does today. */
+  M.loadUtilities = function (url, cb) {
+    cb = cb || function () {};
+    getJSON(url || "utilities.json", function (err, j) {
+      if (err || !j || !j.utilities) { cb(err || new Error("no registry")); return; }
+      var out = [], i, u;
+      for (i = 0; i < j.utilities.length; i++) {
+        u = j.utilities[i];
+        if (!u.bbox) continue;
+        out.push({ key: u.key, name: u.name, utility: u.legalName || u.name,
+                   states: u.states || [], hasMap: u.hasMap,
+                   endpoint: u.endpoint || null, verified: !!u.verified,
+                   note: u.note || "",
+                   s: u.bbox.s, n: u.bbox.n, w: u.bbox.w, e: u.bbox.e });
+      }
+      if (out.length) M.TERRITORIES = out;
+      diag("utilities: " + out.length + " in registry, " +
+           out.filter(function (x) { return x.verified; }).length + " verified");
+      cb(null, M.TERRITORIES);
+    });
+  };
+  M.inTerritory = function (lat, lon) {
+    for (var i = 0; i < M.TERRITORIES.length; i++) {
+      var t = M.TERRITORIES[i];
+      if (lat > t.s && lat < t.n && lon > t.w && lon < t.e) return true;
+    }
+    return false;
+  };
+  /* Whose wire, and can we read it. Prefers a utility that actually has a
+     readable map when the boxes overlap — which they do, because they are
+     rectangles over irregular territories. A rep in a county served by two
+     utilities is better off being shown the one with data than the one
+     without. */
+  M.territoryAt = function (lat, lon) {
+    var hit = null, i, t;
+    for (i = 0; i < M.TERRITORIES.length; i++) {
+      t = M.TERRITORIES[i];
+      if (!(lat > t.s && lat < t.n && lon > t.w && lon < t.e)) continue;
+      if (t.verified) return t;                    /* confirmed against live data */
+      if (!hit || (t.hasMap === true && hit.hasMap !== true)) hit = t;
+    }
+    return hit;
+  };
+
+  /* Does this point have a map this tool can actually read TODAY? Distinct
+     from territoryAt(): a utility can serve a point, publish nothing, and
+     still be the right name to put on the card. */
+  M.readableAt = function (lat, lon) {
+    var t = M.territoryAt(lat, lon);
+    return !!(t && t.verified && t.endpoint);
+  };
+
   function probeOrder(lat, lon, order, cb) {
     /* THE CAPACITY FINDER'S REQUEST, BYTE FOR BYTE.
 
@@ -778,7 +853,7 @@
 
     (function tryNext() {
       if (i >= order.length || i >= 12) {
-        var inTerritory = (lat > 40.6 && lat < 42.6 && lon > -89.5 && lon < -87.4);
+        var inTerritory = M.inTerritory(lat, lon);
         cb(null, { rows: [], layerId: null, addressResolved: false,
                    grain: "", tried: order.slice(0, i), errors: errs,
                    /* Every attempt errored — and there was at least one.

@@ -685,7 +685,7 @@
      Shown in Settings and stamped into the diagnostics log. Several rounds of
      debugging have been spent on the question "is the deployed file the one
      we just changed", and a screenshot cannot answer it. Now it can. */
-  var CS_BUILD = "2026-08-28 18:41 UTC";
+  var CS_BUILD = "2026-08-29 20:38 UTC";
 
   function savedTileKey() {
     try { return window.localStorage.getItem("cs.tileKey") || ""; }
@@ -790,6 +790,8 @@
              probeUrl: res ? res.lastUrl : "",
              headline: broke ? "Could not reach ComEd"
                      : odd ? "Empty answer from every ComEd layer"
+                     : (LAY.inTerritory && !LAY.inTerritory(lat, lon))
+                         ? "Outside the mapped utility territory"
                      : "No ComEd circuit published here",
              why: broke
                ? "Every ComEd layer refused or failed to answer, including the " +
@@ -812,6 +814,11 @@
                  (res && res.tried && res.tried.length
                    ? " Layers tried: " + res.tried.join(", ") + "." : "") +
                  " The exact request is below."
+               : (LAY.inTerritory && !LAY.inTerritory(lat, lon))
+               /* Not an error and not a gap in ComEd's data. There is simply
+                  no utility mapped here yet, and a rep should not go hunting
+                  for a circuit that was never going to be found. */
+               ? utilityNote(lat, lon)
                : "ComEd returned no hosting-capacity feature at this point, on " +
                  "any of its published layers. That is not the same as no " +
                  "service \u2014 ComEd publishes capacity for some circuits and " +
@@ -2098,6 +2105,9 @@
       geoSrc: v.geoSrc, geoInterp: v.geoInterp, geoStreet: v.geoStreet,
       approx: !!v.approxPin,
       approxKind: v.approxKind || "",
+      /* Outside every mapped utility. Not the same as "we looked and found
+         nothing" — nobody looked, because there is nothing here to look at. */
+      offTerritory: !!(LAY.inTerritory && !LAY.inTerritory(lat, lon)),
       addressResolved: v.addressResolved,
       savedAt: new Date().toISOString(),
       src: "lookup"
@@ -2761,6 +2771,14 @@
   }
 
   function reportCardForRecord(r) {
+    if (r.offTerritory) {
+      return '<div class="sec"><h4>Site report card</h4><p class="note">' +
+        '<b>No utility is mapped at this address.</b> This tool currently ' +
+        'carries one hosting-capacity layer \u2014 ComEd, in northern Illinois ' +
+        '\u2014 so there is no circuit to read here and no battery to size. ' +
+        'Everything else on this card is still real: the address, the position, ' +
+        'and whatever the county publishes about the parcel.</p></div>';
+    }
     if (!r.feederId || !r.circ || !r.circ.known) {
       return '<div class="sec"><h4>Site report card</h4><p class="note">' +
         'No circuit is attributed to this site yet, so there is nothing to size ' +
@@ -2928,8 +2946,10 @@
         /* "Circuit open" on a circuit this very site has fully claimed is
            the sentence that misleads. Your own hold renames the pill. */
         '<span class="cst" style="background:' +
-          (ownLive.length ? "#c98a2b" : r.cst.color) + '">' +
-          esc(ownLive.length ? "You hold this" : r.cst.label) + '</span>' +
+          (ownLive.length ? "#c98a2b"
+           : r.offTerritory ? "#8a94a0" : r.cst.color) + '">' +
+          esc(ownLive.length ? "You hold this"
+              : r.offTerritory ? "No utility mapped" : r.cst.label) + '</span>' +
       '</div>' +
       '<div class="bd">' +
         '<div class="kw">' + kwTxt + ' <small>kW deliverable</small></div>' +
@@ -3856,6 +3876,191 @@
     return h;
   }
 
+  /* ══════════════════════════════════════════════════════════════════════
+     THE SITE PACKET — the handoff to the cost estimator
+
+     One site, as JSON, in a shape a second tool can price without guessing.
+
+     THE HARD PART IS NOT WHAT WE KNOW, IT IS WHAT WE DO NOT.
+
+     This tool can size a battery: circuit headroom, customer peak, kW and
+     kWh. That is maybe a third of what decides construction cost. The rest
+     is site-specific and none of it is in any layer we read:
+
+       interconnection voltage   480 V service and 12 kV primary are different
+                                 projects, not different line items
+       distance to the POI       cable and trenching from pad to point of
+                                 interconnection, which nothing here measures
+       utility-side upgrades     a transformer or switchgear replacement can
+                                 exceed the battery
+       site works                soil, grading, NFPA 855 setbacks, fire access,
+                                 fencing, spill containment
+       AHJ and permitting        local, and occasionally the schedule driver
+       labour                    prevailing wage varies by locality
+       equipment price           moves quarterly and is quoted, not looked up
+
+     So the packet has two halves. `known` carries what was actually read,
+     each value stamped with where it came from. `required` lists what the
+     estimator must be told, with the reason it matters. A packet that
+     pretended to be complete would produce a confident number built on
+     silent defaults, which is the worst possible output for a capex
+     estimate — wrong, and impossible to argue with.
+
+     `schemaVersion` is here from the first packet so the estimator can
+     refuse one it does not understand rather than misreading it.
+     ══════════════════════════════════════════════════════════════════════ */
+  var PACKET_SCHEMA = "clearsky.site-packet/1";
+
+  function sitePacket(r) {
+    function prov(value, source, asOf) {
+      if (value == null || value === "") return null;
+      return { value: value, source: source, asOf: asOf || null };
+    }
+    var st = r.circ || {};
+    var sz = r.sz || {};
+    var comed = r.comed || {};
+    var terr = (LAY.territoryAt && r.lat != null)
+                 ? LAY.territoryAt(r.lat, r.lon) : null;
+
+    return {
+      schemaVersion: PACKET_SCHEMA,
+      generatedAt: new Date().toISOString(),
+      generatedBy: { tool: "ClearSky-OMEGA Site Finder", build: CS_BUILD,
+                     org: ORG, rep: ST.rep || "" },
+
+      site: {
+        id: r.id,
+        address: r.addr || "",
+        city: r.city || "", state: r.state || "", zip: r.zip || "",
+        lat: r.lat, lon: r.lon,
+        positionQuality: r.approx ? (r.approxKind || "approximate")
+                       : r.geoStreet ? "street level"
+                       : r.geoInterp ? "interpolated along street"
+                       : r.geoSrc || "unknown",
+        /* An estimator must not price a site whose position is a postcode
+           centre: every distance in the model would be fiction. */
+        positionIsBuilding: !r.approx && !r.geoStreet
+      },
+
+      parcel: {
+        pin: prov(r.pin, "county assessor"),
+        county: prov(r.county, "county assessor"),
+        lotAcres: prov(r.lotAcres, "county assessor"),
+        buildingSqft: prov(r.sqft, "county assessor"),
+        yearBuilt: prov(r.yearBuilt, "county assessor"),
+        useClass: prov(r.clsLabel || r.type, "county assessor"),
+        owner: prov(r.owner && r.owner.name, "county assessor")
+      },
+
+      utility: {
+        name: terr ? terr.name : null,
+        circuit: prov(r.feederId, "utility hosting-capacity map"),
+        substation: prov(r.sub, "utility hosting-capacity map"),
+        /* ⚠ Straight-line only, and the NEAREST substation is not
+           necessarily the SERVING one. Do not derive a cable run from it. */
+        substationDistance: null,
+        capacityAsOf: r.queueRefreshed || null,
+        bufferFt: r.buffFt != null ? r.buffFt : null
+      },
+
+      capacity: {
+        /* Every figure the utility published, not just the product currently
+           selected — a site can be poor for storage and excellent as load. */
+        netLoadKw: prov(comed.BESS_HC, "utility published", r.queueRefreshed),
+        netGenerationKw: prov(comed.PV_HC_kW, "utility published", r.queueRefreshed),
+        loadSideKw: prov(comed.EV_HC_kW, "utility published", r.queueRefreshed),
+        queuedByOthersKw: prov(st.queue, "utility interconnection queue",
+                               r.queueRefreshed),
+        heldByUsKw: prov((st.firm || 0) + (st.soft || 0), "ClearSky ledger"),
+        sellableKw: prov(st.sellable, "computed: published minus queue minus holds"),
+        circuitsCoveringPoint: r.comedCovering || null
+      },
+
+      sizing: {
+        /* What this tool concluded. The estimator should treat it as the
+           STARTING POINT, not the design — duration, coupling and topology
+           are engineering decisions nobody has made yet. */
+        batteryKw: sz.kw != null ? sz.kw : null,
+        batteryKwh: sz.kwh != null ? sz.kwh : null,
+        assumedHours: sz.hours || 2,
+        bindingConstraint: sz.binds || null,
+        customerPeakKw: r.peakKw != null ? Math.round(r.peakKw) : null,
+        peakSource: r.annualKwh ? r.annualKwh.src : null,
+        batteryScore: r.score, largeLoadScore: r.loadScore
+      },
+
+      /* ── WHAT THE ESTIMATOR MUST BE TOLD ────────────────────────────
+         Not defaults. Not nulls to be quietly filled in. An explicit list
+         of the things this tool cannot know, each with why it matters, so
+         the receiving tool can put them in front of a human instead of
+         assuming them. */
+      required: [
+        { field: "interconnectionVoltage", units: "V",
+          why: "480 V secondary and 12 kV primary are different projects, not different line items. Drives switchgear, protection, transformer and utility review." },
+        { field: "poiDistanceFt", units: "ft",
+          why: "Cable and trenching from the equipment pad to the point of interconnection. Nothing in the site data measures it; it comes off a site walk or an aerial." },
+        { field: "utilitySideUpgrade", units: "yes/no/unknown",
+          why: "A transformer or switchgear replacement can exceed the cost of the battery. Only the interconnection study answers it." },
+        { field: "padArea", units: "sq ft",
+          why: "Equipment footprint plus NFPA 855 separation and fire access. Lot acreage is in the packet but says nothing about what is usable." },
+        { field: "soilAndGrading", units: "text",
+          why: "Foundation design and earthworks. Cannot be inferred from a parcel record." },
+        { field: "ahj", units: "text",
+          why: "Permitting cost and, more often, schedule. Local and variable." },
+        { field: "laborBasis", units: "text",
+          why: "Prevailing wage versus open shop changes installed cost materially and is a locality question." },
+        { field: "equipmentQuoteDate", units: "date",
+          why: "Cell and inverter pricing moves quarterly. An estimate without a quote date cannot be compared with another." },
+        { field: "duration", units: "hours",
+          why: "The packet assumes " + (sz.hours || 2) + " h as a screening figure. Real duration follows the revenue case, and it moves both kWh and cost per kW." }
+      ],
+
+      /* Anything the packet could not fill, said plainly rather than left
+         as a null for the estimator to interpret. */
+      gaps: (function () {
+        var g = [];
+        if (!r.feederId) g.push("No circuit attributed — capacity figures are absent or reconstructed.");
+        if (r.approx) g.push("Position is not the building (" + (r.approxKind || "approximate") + "). Any distance derived from it is fiction.");
+        if (r.sqft == null) g.push("No building area, so no load estimate from floor area.");
+        if (r.peakKw == null) g.push("No customer peak. Battery size reflects the circuit only, and a real peak usually lowers it.");
+        if (r.annualKwh && r.annualKwh.src !== "metered") g.push("Consumption is modelled, not metered. Confirm against twelve months of bills before pricing.");
+        if (!r.lotAcres) g.push("No lot acreage, so no check that the equipment fits.");
+        return g;
+      })()
+    };
+  }
+
+  function downloadPacket(r) {
+    var name = (r.addr || r.id).replace(/[^A-Za-z0-9]+/g, "-")
+                 .replace(/^-|-$/g, "").slice(0, 60).toLowerCase();
+    var blob = new Blob([JSON.stringify(sitePacket(r), null, 2)],
+                        { type: "application/json;charset=utf-8" });
+    var a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = "site-packet-" + (name || "site") + ".json";
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    setTimeout(function () { URL.revokeObjectURL(a.href); }, 2000);
+  }
+
+  function packetBlockHtml(r) {
+    var p = sitePacket(r);
+    return '<div class="sec"><h4>Send to the cost estimator</h4>' +
+      '<div class="setKeyRow">' +
+      '<button id="dPacket" data-id="' + esc(r.id) + '">Export this site</button>' +
+      '</div><p class="note">One JSON file for this site: what the circuit ' +
+      'publishes, what the county knows, what the ledger holds, and the size ' +
+      'this tool arrived at. It also carries <b>' + p.required.length +
+      ' things the estimator has to be told</b> \u2014 interconnection voltage, ' +
+      'distance to the point of interconnection, whether the utility needs an ' +
+      'upgrade \u2014 because those decide more of the construction cost than ' +
+      'the battery size does, and none of them are in any layer read here.' +
+      (p.gaps.length
+        ? '<br><br><b>Gaps in this packet (' + p.gaps.length + '):</b><br><small>' +
+          p.gaps.map(esc).join('<br>') + '</small>'
+        : '<br><br>No gaps \u2014 every field this tool can fill is filled.') +
+      '</p></div>';
+  }
+
   function saveBlockHtml(v, lat, lon) {
     var id = "site:" + lat.toFixed(5) + "," + lon.toFixed(5);
     var have = isSaved(id);
@@ -3912,6 +4117,49 @@
       g("Battery deal", '<b>' + battery + '</b> / 100') +
       g("Large load / data centre", '<b>' + large + '</b> / 100') +
       '</div><p class="note">' + why.join(" ") + '</p></div>';
+  }
+
+  /* FOUR DIFFERENT ANSWERS, NOT TWO.
+
+     "No circuit here" covers four situations that need different next steps,
+     and collapsing them sends a rep to the wrong one:
+
+       no utility mapped   nothing serves this point in the registry
+       publishes, unwired  the utility HAS a map; this tool cannot read it yet
+       no public map       the utility does not publish one and is not going to
+       readable, empty     we asked, and there is genuinely nothing here
+
+     The third is the one worth spelling out. Texas is the largest storage
+     market in the country and has no hosting-capacity mandate — reading its
+     silence as "no opportunity" would be exactly backwards. */
+  function utilityNote(lat, lon) {
+    var t = LAY.territoryAt && LAY.territoryAt(lat, lon);
+    if (!t) {
+      return "No utility in this tool\u2019s registry serves this address. " +
+        "Everything else on this card is real \u2014 the address, the position, " +
+        "the satellite view, whatever the county publishes \u2014 there is just " +
+        "no wire to read. Adding a utility means adding its territory and its " +
+        "published capacity service to utilities.json.";
+    }
+    if (t.hasMap === false) {
+      return "<b>" + esc(t.name) + "</b> serves this address and does NOT publish " +
+        "a hosting-capacity map. That is a regulatory difference, not a sign the " +
+        "site is poor \u2014 several of the strongest storage markets in the " +
+        "country publish nothing. Work it through the interconnection queue and " +
+        "the utility directly." +
+        (t.note ? " <br><small>" + esc(t.note) + "</small>" : "");
+    }
+    if (t.hasMap === true) {
+      return "<b>" + esc(t.name) + "</b> serves this address and DOES publish a " +
+        "hosting-capacity map \u2014 this tool just cannot read it yet. That is " +
+        "a day of work, not a dead end: point utilities.json at the service and " +
+        "run verify_utilities.py." +
+        (t.note ? " <br><small>" + esc(t.note) + "</small>" : "");
+    }
+    return "<b>" + esc(t.name) + "</b> serves this address. Whether it publishes " +
+      "a hosting-capacity map has not been checked \u2014 see the DOE atlas entry " +
+      "for its state, then utilities.json." +
+      (t.note ? " <br><small>" + esc(t.note) + "</small>" : "");
   }
 
   function showViability(v, lat, lon) {
@@ -4078,6 +4326,7 @@
     /* The report card leads, then the save control, then the detail. A rep
        opening a card wants the verdict first and the paperwork after. */
     h.push(reportCardForRecord(r));
+    h.push(packetBlockHtml(r));
     h.push(mapsLinksHtml(r));
     h.push(saveRowHtml(r));
 
@@ -4380,6 +4629,9 @@
   function wireDrawer(r) {
     /* Save/remove, from the card's own panel. Re-opens so the button label
        and the list agree immediately. */
+    var pk = document.getElementById("dPacket");
+    if (pk) pk.onclick = function () { downloadPacket(r); };
+
     var sr = document.getElementById("dSaveRow");
     if (sr) sr.onclick = function () {
       if (isSaved(r.id)) unsaveSite(r.id); else starSite(r);
@@ -5069,6 +5321,9 @@
   ST.saved = loadSaved();
   ST.hidden = loadHidden();
   ST.imported = loadImported();
+  /* The national registry, if it is deployed alongside the page. Absent, the
+     tool stays ComEd-only and says so — which is what it did before. */
+  if (LAY.loadUtilities) LAY.loadUtilities("utilities.json", function () { render(); });
   wireSettings();
   wireLayers();
   render();

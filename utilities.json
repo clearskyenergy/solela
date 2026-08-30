@@ -1,0 +1,282 @@
+{
+  "_README": [
+    "utilities.json — which utility serves a point, and whether it publishes a",
+    "hosting-capacity map this tool can read.",
+    "",
+    "WHY THIS FILE EXISTS",
+    "The territory boundary used to be four numbers inline in the probe. Going",
+    "national means the question 'whose wire is this' has to be answered before",
+    "'how much room is on it', and the answer is different in every state.",
+    "",
+    "WHAT 'NATIONAL' ACTUALLY MEANS HERE",
+    "There is no national hosting-capacity dataset. Nobody publishes one. The",
+    "DOE keeps an ATLAS of the maps that exist, and as of its May 2024 edition",
+    "that was 58 utilities and state agencies across 26 states, DC and Puerto",
+    "Rico — and DOE is explicit that it does not maintain those maps, only the",
+    "list. https://www.energy.gov/cmei/us-atlas-electric-distribution-system-hosting-capacity-maps",
+    "",
+    "So the honest ceiling for circuit-level answers is roughly half the states,",
+    "partial within them. Everywhere else the tool still works — address,",
+    "position, satellite, parcel, notes, starring, export — it simply has no",
+    "wire to read. That is what `hasMap: false` and `hasMap: null` mean below,",
+    "and why the card says 'no utility mapped' rather than 'circuit unknown'.",
+    "",
+    "TWO SEPARATE PROBLEMS, DELIBERATELY KEPT APART",
+    "  1. WHICH UTILITY serves a point. Solvable nationally today: HIFLD and",
+    "     EIA publish Electric Retail Service Territories as polygons. The bbox",
+    "     entries here are a coarse stand-in so the tool works before that layer",
+    "     is wired; they OVERLAP and they are wrong at the edges, which is why",
+    "     `bboxIsApproximate` is true on every one of them.",
+    "  2. WHETHER THAT UTILITY PUBLISHES CAPACITY, and at what URL. Not solvable",
+    "     centrally. One utility at a time, same as counties.json.",
+    "",
+    "EVERY endpoint below is null except ComEd. That is deliberate and it is",
+    "not laziness: an endpoint guessed from a pattern is worse than no endpoint,",
+    "because it fails as 'no capacity here' rather than as 'not configured', and",
+    "a rep reads that as a dead site. Run verify_utilities.py to discover and",
+    "confirm one, exactly as verify_counties.py does for assessors.",
+    "",
+    "`verified: true` means: an endpoint was called, it returned features, and",
+    "the field names were read off the response. Nothing else earns it."
+  ],
+
+  "_source": {
+    "atlas": "https://www.energy.gov/cmei/us-atlas-electric-distribution-system-hosting-capacity-maps",
+    "atlasEdition": "May 2024 — 58 publishers, 26 states + DC + PR",
+    "territories": "HIFLD / EIA-861 Electric Retail Service Territories (not yet wired)",
+    "note": "The atlas is the worklist. Work down it; do not guess endpoints."
+  },
+
+  "utilities": [
+    {
+      "key": "comed",
+      "name": "ComEd",
+      "legalName": "Commonwealth Edison",
+      "states": ["IL"],
+      "bbox": { "s": 40.6, "n": 42.6, "w": -89.5, "e": -87.4 },
+      "bboxIsApproximate": true,
+      "hasMap": true,
+      "kind": "arcgis",
+      "endpoint": "https://comed-proxy.clearsky-omega.workers.dev/comed",
+      "products": ["bess", "pv", "ev"],
+      "fields": {
+        "feeder": ["FEEDER_NAME", "FEEDER", "FEEDER_N"],
+        "substation": ["SS_N"],
+        "bess": ["BESS_HC"],
+        "pv": ["PV_HC_kW"],
+        "ev": ["EV_HC_kW"],
+        "queue": ["Feeder_Q"],
+        "buffer": ["BUFF_DIST"]
+      },
+      "verified": true,
+      "note": "The only one confirmed against live data. Service name carries a month (JUN2026) and rotates quarterly — the Worker's UPSTREAM constant has to follow it, and when it does not, every layer returns 403."
+    },
+
+    {
+      "key": "ameren-il",
+      "name": "Ameren Illinois",
+      "states": ["IL"],
+      "bbox": { "s": 36.9, "n": 41.5, "w": -91.6, "e": -87.4 },
+      "bboxIsApproximate": true,
+      "hasMap": null,
+      "kind": null,
+      "endpoint": null,
+      "verified": false,
+      "note": "Downstate Illinois, adjacent to ComEd. Same state, same regulator, so the most likely second utility. Check the DOE atlas entry for Illinois."
+    },
+
+    {
+      "key": "ju-ny",
+      "name": "Joint Utilities of New York",
+      "legalName": "ConEd, National Grid, NYSEG, RG&E, Central Hudson, Orange & Rockland",
+      "states": ["NY"],
+      "bbox": { "s": 40.4, "n": 45.1, "w": -79.8, "e": -71.8 },
+      "bboxIsApproximate": true,
+      "hasMap": true,
+      "kind": null,
+      "endpoint": null,
+      "verified": false,
+      "note": "Six utilities publishing to a COMMON methodology under a PSC roadmap, which is unusual and valuable — one adapter may serve all six. Storage-specific fields were added and the maps were enhanced in April 2026, including scheduled-operation storage fields. https://jointutilitiesofny.org/utility-specific-pages/hosting-capacity"
+    },
+
+    {
+      "key": "pge-ca",
+      "name": "PG&E",
+      "legalName": "Pacific Gas and Electric",
+      "states": ["CA"],
+      "bbox": { "s": 34.8, "n": 42.0, "w": -124.5, "e": -118.5 },
+      "bboxIsApproximate": true,
+      "hasMap": null,
+      "kind": null,
+      "endpoint": null,
+      "verified": false,
+      "note": "California's three IOUs publish Integration Capacity Analysis maps under CPUC order. ICA is the same idea as hosting capacity with different vocabulary — expect the field names to differ substantially from ComEd's."
+    },
+    {
+      "key": "sce-ca",
+      "name": "Southern California Edison",
+      "states": ["CA"],
+      "bbox": { "s": 32.8, "n": 37.5, "w": -121.5, "e": -114.1 },
+      "bboxIsApproximate": true,
+      "hasMap": null,
+      "kind": null,
+      "endpoint": null,
+      "verified": false,
+      "note": "See pge-ca. Same CPUC ICA framework."
+    },
+    {
+      "key": "sdge-ca",
+      "name": "San Diego Gas & Electric",
+      "states": ["CA"],
+      "bbox": { "s": 32.5, "n": 33.5, "w": -117.6, "e": -116.1 },
+      "bboxIsApproximate": true,
+      "hasMap": null,
+      "kind": null,
+      "endpoint": null,
+      "verified": false,
+      "note": "See pge-ca. Same CPUC ICA framework."
+    },
+
+    {
+      "key": "xcel-mn",
+      "name": "Xcel Energy (Minnesota)",
+      "legalName": "Northern States Power",
+      "states": ["MN", "ND", "SD"],
+      "bbox": { "s": 43.4, "n": 49.0, "w": -97.3, "e": -92.0 },
+      "bboxIsApproximate": true,
+      "hasMap": null,
+      "kind": null,
+      "endpoint": null,
+      "verified": false,
+      "note": "Minnesota was an early hosting-capacity state. Xcel appears in the DOE atlas; confirm which of its operating companies the map covers."
+    },
+    {
+      "key": "psco-co",
+      "name": "Xcel Energy (Colorado)",
+      "legalName": "Public Service Company of Colorado",
+      "states": ["CO"],
+      "bbox": { "s": 37.0, "n": 41.0, "w": -109.1, "e": -102.0 },
+      "bboxIsApproximate": true,
+      "hasMap": null,
+      "kind": null,
+      "endpoint": null,
+      "verified": false,
+      "note": "Named in the DOE atlas coverage. Separate map from the Minnesota one despite the shared brand — treat as two utilities, not one."
+    },
+
+    {
+      "key": "pepco",
+      "name": "Pepco Holdings",
+      "legalName": "Potomac Electric Power Co, Delmarva, Atlantic City Electric",
+      "states": ["DC", "MD", "DE", "NJ"],
+      "bbox": { "s": 38.3, "n": 40.3, "w": -77.6, "e": -74.4 },
+      "bboxIsApproximate": true,
+      "hasMap": null,
+      "kind": null,
+      "endpoint": null,
+      "verified": false,
+      "note": "Exelon sibling of ComEd, which is the reason to try it early: an Exelon utility is more likely than most to publish on the same Esri platform with a similar schema, so the existing adapter may largely work."
+    },
+    {
+      "key": "bge",
+      "name": "BGE",
+      "legalName": "Baltimore Gas and Electric",
+      "states": ["MD"],
+      "bbox": { "s": 38.6, "n": 39.9, "w": -77.3, "e": -75.8 },
+      "bboxIsApproximate": true,
+      "hasMap": null,
+      "kind": null,
+      "endpoint": null,
+      "verified": false,
+      "note": "Exelon sibling. See pepco."
+    },
+    {
+      "key": "peco",
+      "name": "PECO",
+      "states": ["PA"],
+      "bbox": { "s": 39.7, "n": 40.5, "w": -76.0, "e": -74.7 },
+      "bboxIsApproximate": true,
+      "hasMap": null,
+      "kind": null,
+      "endpoint": null,
+      "verified": false,
+      "note": "Exelon sibling. See pepco."
+    },
+
+    {
+      "key": "eversource",
+      "name": "Eversource",
+      "states": ["MA", "CT", "NH"],
+      "bbox": { "s": 41.0, "n": 45.3, "w": -73.7, "e": -70.5 },
+      "bboxIsApproximate": true,
+      "hasMap": null,
+      "kind": null,
+      "endpoint": null,
+      "verified": false,
+      "note": "Massachusetts has a hosting-capacity requirement; confirm whether the map spans all three states or Massachusetts only."
+    },
+    {
+      "key": "national-grid-ma",
+      "name": "National Grid (Massachusetts)",
+      "states": ["MA"],
+      "bbox": { "s": 41.2, "n": 42.9, "w": -73.5, "e": -70.7 },
+      "bboxIsApproximate": true,
+      "hasMap": null,
+      "kind": null,
+      "endpoint": null,
+      "verified": false,
+      "note": "Distinct from the New York National Grid entry inside ju-ny. Same parent, different regulator, probably a different map."
+    },
+
+    {
+      "key": "dte",
+      "name": "DTE Energy",
+      "states": ["MI"],
+      "bbox": { "s": 41.7, "n": 44.3, "w": -84.4, "e": -82.4 },
+      "bboxIsApproximate": true,
+      "hasMap": null,
+      "kind": null,
+      "endpoint": null,
+      "verified": false,
+      "note": "Michigan appears in the atlas; confirm DTE versus Consumers coverage."
+    },
+    {
+      "key": "consumers-mi",
+      "name": "Consumers Energy",
+      "states": ["MI"],
+      "bbox": { "s": 41.7, "n": 45.9, "w": -86.8, "e": -82.4 },
+      "bboxIsApproximate": true,
+      "hasMap": null,
+      "kind": null,
+      "endpoint": null,
+      "verified": false,
+      "note": "See dte."
+    },
+
+    {
+      "key": "hawaiian-electric",
+      "name": "Hawaiian Electric",
+      "states": ["HI"],
+      "bbox": { "s": 18.9, "n": 22.3, "w": -160.3, "e": -154.7 },
+      "bboxIsApproximate": true,
+      "hasMap": null,
+      "kind": null,
+      "endpoint": null,
+      "verified": false,
+      "note": "Very high DER penetration, so hosting capacity is unusually binding — a market where this tool's core question matters more than most."
+    },
+
+    {
+      "key": "ercot-texas",
+      "name": "Texas (ERCOT area)",
+      "states": ["TX"],
+      "bbox": { "s": 25.8, "n": 36.5, "w": -106.7, "e": -93.5 },
+      "bboxIsApproximate": true,
+      "hasMap": false,
+      "kind": null,
+      "endpoint": null,
+      "verified": false,
+      "note": "⚠ THE BIGGEST STORAGE MARKET IN THE COUNTRY AND THE THINNEST DATA. Texas leads US battery build-out by a wide margin, but the deregulated market splits wires from retail across many TDUs (Oncor, CenterPoint, AEP Texas, TNMP) and Texas is not among the states with a public hosting-capacity mandate. Expect no map. Plan on interconnection queues and direct TDU contact instead — and do not let the absence read as 'no opportunity', because it is the opposite."
+    }
+  ]
+}
